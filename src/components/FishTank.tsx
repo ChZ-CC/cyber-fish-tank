@@ -1,0 +1,220 @@
+'use client';
+
+import { forwardRef, useEffect, useState, Dispatch, SetStateAction } from 'react';
+
+interface Fish {
+  id: string;
+  x: number;
+  y: number;
+  size: number;
+  image: string;
+  speedX: number;
+  speedY: number;
+}
+
+interface Food {
+  id: string;
+  x: number;
+  y: number;
+  eaten: boolean;
+  foodType: string;
+  createdAt: number;
+}
+
+interface FishTankProps {
+  fishes: Fish[];
+  setFishes: Dispatch<SetStateAction<Fish[]>>;
+  foods: Food[];
+  setFoods: Dispatch<SetStateAction<Food[]>>;
+  backgroundColor: string;
+}
+
+const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
+  ({ fishes, setFishes, foods, setFoods, backgroundColor }, ref) => {
+    const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+    const containerRef = (ref as React.RefObject<HTMLDivElement>) || null;
+
+    useEffect(() => {
+      if (containerRef?.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        setContainerSize({ width: rect.width, height: rect.height });
+      }
+    }, [containerRef]);
+
+    useEffect(() => {
+      const interval = setInterval(() => {
+        // 清理超过2秒的食料
+        const now = Date.now();
+        setFoods((prevFoods) =>
+          prevFoods.filter((food) => now - food.createdAt < 2000 && !food.eaten)
+        );
+
+        setFishes((prevFishes) => {
+          const uneatenFoods = foods.filter((f) => !f.eaten);
+
+          return prevFishes.map((fish) => {
+            let newX = fish.x + fish.speedX;
+            let newY = fish.y + fish.speedY;
+            let newSpeedX = fish.speedX;
+            let newSpeedY = fish.speedY;
+            let newSize = fish.size;
+
+            // 边界碰撞检测
+            if (newX <= 0 || newX + fish.size >= containerSize.width) {
+              newSpeedX = -newSpeedX;
+              newX = Math.max(0, Math.min(newX, containerSize.width - fish.size));
+            }
+            if (newY <= 0 || newY + fish.size >= containerSize.height) {
+              newSpeedY = -newSpeedY;
+              newY = Math.max(0, Math.min(newY, containerSize.height - fish.size));
+            }
+
+            // 食料吸引逻辑
+            if (uneatenFoods.length > 0) {
+              let nearestFood = uneatenFoods[0];
+              let minDistance = Infinity;
+
+              for (const food of uneatenFoods) {
+                const dist = Math.sqrt(
+                  Math.pow(food.x - (fish.x + fish.size / 2), 2) +
+                    Math.pow(food.y - (fish.y + fish.size / 2), 2)
+                );
+                if (dist < minDistance) {
+                  minDistance = dist;
+                  nearestFood = food;
+                }
+              }
+
+              const angle = Math.atan2(
+                nearestFood.y - (fish.y + fish.size / 2),
+                nearestFood.x - (fish.x + fish.size / 2)
+              );
+
+              newSpeedX += Math.cos(angle) * 0.3;
+              newSpeedY += Math.sin(angle) * 0.3;
+
+              // 限制速度
+              const maxSpeed = 5;
+              const speed = Math.sqrt(newSpeedX ** 2 + newSpeedY ** 2);
+              if (speed > maxSpeed) {
+                newSpeedX = (newSpeedX / speed) * maxSpeed;
+                newSpeedY = (newSpeedY / speed) * maxSpeed;
+              }
+
+              // 检测是否吃到食料
+              const distanceToFood = Math.sqrt(
+                Math.pow(nearestFood.x - (fish.x + fish.size / 2), 2) +
+                  Math.pow(nearestFood.y - (fish.y + fish.size / 2), 2)
+              );
+
+              if (distanceToFood < fish.size / 2 + 10) {
+                // 标记食料为已吃掉
+                setFoods((prevFoods) =>
+                  prevFoods.map((f) =>
+                    f.id === nearestFood.id ? { ...f, eaten: true } : f
+                  )
+                );
+                // 鱼的体积增加
+                newSize = Math.min(fish.size * 1.1, 150); // 最大150px
+              }
+            }
+
+            return {
+              ...fish,
+              x: newX,
+              y: newY,
+              speedX: newSpeedX,
+              speedY: newSpeedY,
+              size: newSize,
+            };
+          });
+        });
+      }, 50);
+
+      return () => clearInterval(interval);
+    }, [fishes, foods, containerSize, setFishes, setFoods]);
+
+    return (
+      <div
+        ref={containerRef}
+        className="relative w-full h-full rounded-3xl overflow-hidden border-8 border-gray-700 shadow-2xl"
+        style={{ backgroundColor, transition: 'background-color 0.5s ease' }}
+      >
+        {/* 水面波纹效果 */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-0 left-0 w-full h-8 bg-gradient-to-b from-white/20 to-transparent animate-pulse" />
+          <div
+            className="absolute top-12 w-64 h-4 bg-white/10 rounded-full"
+            style={{ left: '20%', animation: 'wave 3s ease-in-out infinite' }}
+          />
+          <div
+            className="absolute top-20 w-48 h-3 bg-white/10 rounded-full"
+            style={{ left: '60%', animation: 'wave 4s ease-in-out infinite 1s' }}
+          />
+        </div>
+
+        {/* 气泡 */}
+        <div className="absolute bottom-0 left-10 w-3 h-3 bg-white/30 rounded-full animate-bubble" style={{ animationDelay: '0s' }} />
+        <div className="absolute bottom-0 left-1/4 w-2 h-2 bg-white/30 rounded-full animate-bubble" style={{ animationDelay: '1s' }} />
+        <div className="absolute bottom-0 right-1/4 w-4 h-4 bg-white/30 rounded-full animate-bubble" style={{ animationDelay: '2s' }} />
+        <div className="absolute bottom-0 right-10 w-3 h-3 bg-white/30 rounded-full animate-bubble" style={{ animationDelay: '3s' }} />
+
+        {/* 食料 */}
+        {foods.map((food) => {
+          const foodColors: Record<string, string> = {
+            '鱼食': '#FF6B6B',
+            '虫子': '#4ECDC4',
+            '虾米': '#FFE66D',
+          };
+          const foodColor = foodColors[food.foodType] || '#FF6B6B';
+
+          return (
+            <div
+              key={food.id}
+              className="absolute w-6 h-6 rounded-full shadow-lg animate-float z-10"
+              style={{
+                left: food.x - 12, // 减去食料宽度的一半，使中心对齐
+                top: food.y - 12,  // 减去食料高度的一半，使中心对齐
+                backgroundColor: foodColor,
+                transform: `translateY(${Math.sin(Date.now() / 500 + food.x) * 5}px)`,
+              }}
+            />
+          );
+        })}
+
+        {/* 鱼 */}
+        {fishes.map((fish) => (
+          <div
+            key={fish.id}
+            className="absolute transition-transform duration-100"
+            style={{
+              left: fish.x,
+              top: fish.y,
+              width: fish.size,
+              height: fish.size * 0.6,
+              transform: `scaleX(${fish.speedX > 0 ? 1 : -1})`,
+            }}
+          >
+            <img
+              src={fish.image}
+              alt="fish"
+              className="w-full h-full object-contain drop-shadow-lg"
+              style={{ filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.3))' }}
+            />
+          </div>
+        ))}
+
+        {/* 提示文字 */}
+        {fishes.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center text-white/50 text-2xl font-light pointer-events-none">
+            鱼缸是空的，添加一些鱼吧！
+          </div>
+        )}
+      </div>
+    );
+  }
+);
+
+FishTank.displayName = 'FishTank';
+
+export default FishTank;
