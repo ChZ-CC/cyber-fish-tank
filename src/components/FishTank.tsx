@@ -27,10 +27,11 @@ interface FishTankProps {
   foods: Food[];
   setFoods: Dispatch<SetStateAction<Food[]>>;
   backgroundColor: string;
+  onFishClick?: (fishId: string, e: React.MouseEvent) => void;
 }
 
 const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
-  ({ fishes, setFishes, foods, setFoods, backgroundColor }, ref) => {
+  ({ fishes, setFishes, foods, setFoods, backgroundColor, onFishClick }, ref) => {
     const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
     const containerRef = (ref as React.RefObject<HTMLDivElement>) || null;
 
@@ -43,10 +44,10 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
 
     useEffect(() => {
       const interval = setInterval(() => {
-        // 清理超过2秒的食料
+        // 清理超过3秒的食料
         const now = Date.now();
         setFoods((prevFoods) =>
-          prevFoods.filter((food) => now - food.createdAt < 2000 && !food.eaten)
+          prevFoods.filter((food) => now - food.createdAt < 3000 && !food.eaten)
         );
 
         setFishes((prevFishes) => {
@@ -173,8 +174,8 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
               key={food.id}
               className="absolute w-6 h-6 rounded-full shadow-lg animate-float z-10"
               style={{
-                left: food.x - 12, // 减去食料宽度的一半，使中心对齐
-                top: food.y - 12,  // 减去食料高度的一半，使中心对齐
+                left: food.x - 12,
+                top: food.y - 12,
                 backgroundColor: foodColor,
                 transform: `translateY(${Math.sin(Date.now() / 500 + food.x) * 5}px)`,
               }}
@@ -186,7 +187,8 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
         {fishes.map((fish) => (
           <div
             key={fish.id}
-            className="absolute transition-transform duration-100"
+            className="absolute transition-transform duration-100 cursor-pointer hover:scale-110"
+            onClick={(e) => onFishClick?.(fish.id, e)}
             style={{
               left: fish.x,
               top: fish.y,
@@ -199,17 +201,9 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
               src={fish.image}
               alt="fish"
               className="w-full h-full object-contain drop-shadow-lg"
-              style={{ filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.3))' }}
             />
           </div>
         ))}
-
-        {/* 提示文字 */}
-        {fishes.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center text-white/50 text-2xl font-light pointer-events-none">
-            鱼缸是空的，添加一些鱼吧！
-          </div>
-        )}
       </div>
     );
   }

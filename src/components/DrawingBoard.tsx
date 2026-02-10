@@ -44,16 +44,35 @@ export default function DrawingBoard({ onFishCreated, onClose }: DrawingBoardPro
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }, []);
 
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  // 获取坐标的共享函数
+  const getCoordinates = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = (clientX - rect.left) * scaleX;
+    const y = (clientY - rect.top) * scaleY;
+
+    return { x, y };
+  };
+
+  // 开始绘制（共享逻辑）
+  const startDrawingAt = (x: number, y: number) => {
     setIsDrawing(true);
-    draw(e);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.beginPath();
+    ctx.moveTo(x, y);
   };
 
-  const stopDrawing = () => {
-    setIsDrawing(false);
-  };
-
-  const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  // 绘制（共享逻辑）
+  const drawAt = (x: number, y: number) => {
     if (!isDrawing) return;
 
     const canvas = canvasRef.current;
@@ -62,10 +81,6 @@ export default function DrawingBoard({ onFishCreated, onClose }: DrawingBoardPro
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
     ctx.lineWidth = brushSize[0];
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -73,8 +88,46 @@ export default function DrawingBoard({ onFishCreated, onClose }: DrawingBoardPro
 
     ctx.lineTo(x, y);
     ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x, y);
+  };
+
+  // 鼠标事件处理
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const { x, y } = getCoordinates(e.clientX, e.clientY);
+    startDrawingAt(x, y);
+  };
+
+  const stopDrawing = () => {
+    setIsDrawing(false);
+  };
+
+  const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const { x, y } = getCoordinates(e.clientX, e.clientY);
+    drawAt(x, y);
+  };
+
+  // 触摸事件处理
+  const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const { x, y } = getCoordinates(touch.clientX, touch.clientY);
+    startDrawingAt(x, y);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const { x, y } = getCoordinates(touch.clientX, touch.clientY);
+    drawAt(x, y);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    setIsDrawing(false);
+  };
+
+  const handleTouchCancel = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    setIsDrawing(false);
   };
 
   const clearCanvas = () => {
@@ -95,11 +148,8 @@ export default function DrawingBoard({ onFishCreated, onClose }: DrawingBoardPro
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    const pixel = ctx.getImageData(x, y, 1, 1).data;
+    const { x, y } = getCoordinates(e.clientX, e.clientY);
+    const pixel = ctx.getImageData(Math.floor(x), Math.floor(y), 1, 1).data;
     const hex = `#${((1 << 24) + (pixel[0] << 16) + (pixel[1] << 8) + pixel[2]).toString(16).slice(1)}`;
     setCustomColor(hex);
     setBrushColor(hex);
@@ -159,25 +209,29 @@ export default function DrawingBoard({ onFishCreated, onClose }: DrawingBoardPro
   return (
     <div className="flex flex-col h-full gap-4">
       {/* 工具栏 */}
-      <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+      <div className="flex flex-wrap items-center gap-4 p-4 bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
         {/* 画笔粗细 */}
-        <div className="flex items-center gap-2">
-          <Label className="text-sm">粗细</Label>
-          <Slider
-            value={brushSize}
-            onValueChange={setBrushSize}
-            min={1}
-            max={50}
-            step={1}
-            className="w-24"
-          />
-          <span className="text-sm w-8">{brushSize[0]}</span>
+        <div className="flex items-center gap-3">
+          <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">粗细</Label>
+          <div className="flex items-center gap-2">
+            <Slider
+              value={brushSize}
+              onValueChange={setBrushSize}
+              min={1}
+              max={50}
+              step={1}
+              className="w-32"
+            />
+            <span className="text-sm font-mono bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded w-10 text-center">{brushSize[0]}</span>
+          </div>
         </div>
 
+        <div className="h-8 w-px bg-slate-300 dark:bg-slate-600" />
+
         {/* 颜色选择 */}
-        <div className="flex items-center gap-2">
-          <Label className="text-sm">颜色</Label>
-          <div className="flex gap-1">
+        <div className="flex items-center gap-3">
+          <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">颜色</Label>
+          <div className="flex gap-2 flex-wrap">
             {commonColors.map((color) => (
               <button
                 key={color}
@@ -186,10 +240,10 @@ export default function DrawingBoard({ onFishCreated, onClose }: DrawingBoardPro
                   setCustomColor(color);
                   setIsEraser(false);
                 }}
-                className={`w-8 h-8 rounded-full border-2 transition-all ${
+                className={`w-9 h-9 rounded-full border-2 transition-all hover:scale-110 shadow-sm ${
                   brushColor === color && !isEraser
-                    ? 'border-blue-500 scale-110'
-                    : 'border-gray-300 dark:border-gray-600'
+                    ? 'border-blue-500 scale-110 ring-2 ring-blue-500 ring-offset-2'
+                    : 'border-slate-300 dark:border-slate-600 hover:border-slate-400'
                 }`}
                 style={{ backgroundColor: color }}
               />
@@ -197,25 +251,28 @@ export default function DrawingBoard({ onFishCreated, onClose }: DrawingBoardPro
             <Popover>
               <PopoverTrigger asChild>
                 <button
-                  className={`w-8 h-8 rounded-full border-2 border-gray-300 dark:border-gray-600 flex items-center justify-center bg-white dark:bg-gray-700`}
+                  className={`w-9 h-9 rounded-full border-2 border-slate-300 dark:border-slate-600 flex items-center justify-center bg-white dark:bg-slate-700 hover:scale-110 transition-all shadow-sm ${
+                    !commonColors.includes(brushColor) && !isEraser ? 'ring-2 ring-blue-500' : ''
+                  }`}
+                  style={{ backgroundColor: !isEraser && !commonColors.includes(brushColor) ? brushColor : undefined }}
                 >
-                  <Droplet className="w-4 h-4" />
+                  <Droplet className="w-4 h-4 text-slate-600 dark:text-slate-400" />
                 </button>
               </PopoverTrigger>
-              <PopoverContent className="w-auto">
-                <div className="flex flex-col gap-2">
-                  <Label className="text-sm">选择颜色</Label>
-                  <input
-                    type="color"
-                    value={customColor}
-                    onChange={(e) => {
-                      setCustomColor(e.target.value);
-                      setBrushColor(e.target.value);
-                      setIsEraser(false);
-                    }}
-                    className="w-16 h-16 cursor-pointer"
-                  />
-                  <div className="flex gap-2">
+              <PopoverContent className="w-auto p-4" align="end">
+                <div className="flex flex-col gap-3">
+                  <Label className="text-sm font-medium">选择颜色</Label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={customColor}
+                      onChange={(e) => {
+                        setCustomColor(e.target.value);
+                        setBrushColor(e.target.value);
+                        setIsEraser(false);
+                      }}
+                      className="w-16 h-16 cursor-pointer rounded-lg border-2 border-slate-200 dark:border-slate-600"
+                    />
                     <Input
                       type="text"
                       value={customColor}
@@ -225,14 +282,22 @@ export default function DrawingBoard({ onFishCreated, onClose }: DrawingBoardPro
                         setIsEraser(false);
                       }}
                       placeholder="#FF6B6B"
-                      className="w-24"
+                      className="w-28 font-mono uppercase"
                     />
                   </div>
+                  <button
+                    onClick={(e) => pickColor(e as any)}
+                    className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    从画布吸取颜色
+                  </button>
                 </div>
               </PopoverContent>
             </Popover>
           </div>
         </div>
+
+        <div className="h-8 w-px bg-slate-300 dark:bg-slate-600" />
 
         {/* 工具按钮 */}
         <div className="flex gap-2">
@@ -240,49 +305,66 @@ export default function DrawingBoard({ onFishCreated, onClose }: DrawingBoardPro
             variant={isEraser ? 'default' : 'outline'}
             size="sm"
             onClick={() => setIsEraser(!isEraser)}
+            className="gap-2"
           >
             <Eraser className="w-4 h-4" />
+            <span className="hidden sm:inline">橡皮擦</span>
           </Button>
-          <Button variant="outline" size="sm" onClick={clearCanvas}>
+          <Button variant="outline" size="sm" onClick={clearCanvas} className="gap-2">
             <RefreshCw className="w-4 h-4" />
+            <span className="hidden sm:inline">清空</span>
           </Button>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              setIsEraser(false);
-            }}
+            onClick={() => setIsEraser(false)}
+            className="gap-2"
           >
             <Palette className="w-4 h-4" />
+            <span className="hidden sm:inline">画笔</span>
           </Button>
         </div>
       </div>
 
       {/* 画布 */}
-      <div className="flex-1 bg-gray-100 dark:bg-gray-900 rounded-lg overflow-hidden relative">
+      <div className="flex-1 bg-slate-100 dark:bg-slate-900 rounded-xl overflow-hidden relative shadow-inner">
         <canvas
           ref={canvasRef}
           width={800}
           height={500}
-          className="bg-white cursor-crosshair"
+          className="bg-white cursor-crosshair w-full h-full touch-none"
           onMouseDown={startDrawing}
           onMouseMove={draw}
           onMouseUp={stopDrawing}
           onMouseLeave={stopDrawing}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchCancel}
         />
       </div>
 
       {/* 操作按钮 */}
-      <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={onClose}>
+      <div className="flex justify-end gap-3 pt-2">
+        <Button variant="outline" onClick={onClose} className="min-w-[100px]">
           取消
         </Button>
         <Button
           onClick={analyzeDrawing}
           disabled={isAnalyzing}
+          className="min-w-[120px] gap-2"
         >
-          {isAnalyzing ? '分析中...' : '完成'}
-          <Check className="w-4 h-4 ml-2" />
+          {isAnalyzing ? (
+            <>
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              分析中...
+            </>
+          ) : (
+            <>
+              <Check className="w-4 h-4" />
+              完成绘制
+            </>
+          )}
         </Button>
       </div>
 
@@ -290,10 +372,15 @@ export default function DrawingBoard({ onFishCreated, onClose }: DrawingBoardPro
       <AlertDialog open={showAlert} onOpenChange={setShowAlert}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
+            <AlertDialogTitle className="flex items-center gap-2">
+              {alertType === 'success' ? (
+                <span className="text-2xl">✨</span>
+              ) : (
+                <span className="text-2xl">🤔</span>
+              )}
               {alertType === 'success' ? '识别成功' : '识别失败'}
             </AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogDescription className="text-base">
               {alertMessage}
             </AlertDialogDescription>
           </AlertDialogHeader>
