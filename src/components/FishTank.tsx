@@ -11,6 +11,7 @@ interface Fish {
   baseSpeedX: number;
   baseSpeedY: number;
   speedMultiplier: number;
+  name: string;
 }
 
 interface Food {
@@ -144,7 +145,7 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
       <div
         ref={containerRef}
         className="relative w-full h-full rounded-3xl overflow-hidden border-8 border-gray-700 shadow-2xl"
-        style={{ backgroundColor, transition: 'background-color 0.5s ease' }}
+        style={{ background: backgroundColor, transition: 'background 0.5s ease' }}
       >
         {/* 水面波纹效果 */}
         <div className="absolute inset-0 pointer-events-none">

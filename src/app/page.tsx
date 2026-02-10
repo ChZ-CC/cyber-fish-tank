@@ -5,16 +5,17 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 import { Lightbulb, Fish, Plus, Palette, Type, Menu, X, Archive, Trash2, ZoomIn, ZoomOut, Sparkles } from 'lucide-react';
 import FishTank from '@/components/FishTank';
 import DrawingBoard from '@/components/DrawingBoard';
 import ImageGenerator from '@/components/ImageGenerator';
 
 export default function Home() {
-  const [fishes, setFishes] = useState<Array<{ id: string; x: number; y: number; size: number; image: string; baseSpeedX: number; baseSpeedY: number; speedMultiplier: number }>>([]);
+  const [fishes, setFishes] = useState<Array<{ id: string; x: number; y: number; size: number; image: string; baseSpeedX: number; baseSpeedY: number; speedMultiplier: number; name: string }>>([]);
   const [foods, setFoods] = useState<Array<{ id: string; x: number; y: number; eaten: boolean; foodType: string; createdAt: number }>>([]);
-  const [stagingFishes, setStagingFishes] = useState<Array<{ id: string; size: number; image: string; baseSpeedX: number; baseSpeedY: number; speedMultiplier: number }>>([]);
-  const [backgroundColor, setBackgroundColor] = useState('#1a3a4a');
+  const [stagingFishes, setStagingFishes] = useState<Array<{ id: string; size: number; image: string; baseSpeedX: number; baseSpeedY: number; speedMultiplier: number; name: string }>>([]);
+  const [backgroundColor, setBackgroundColor] = useState('linear-gradient(180deg, #E0F0FF 0%, #B8E0F5 100%)');
   const [selectedFood, setSelectedFood] = useState<string | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -24,14 +25,15 @@ export default function Home() {
   const [selectedFishId, setSelectedFishId] = useState<string | null>(null);
   const [fishEditDialogOpen, setFishEditDialogOpen] = useState(false);
   const [aiServiceEnabled, setAiServiceEnabled] = useState(false);
+  const [redrawingFishId, setRedrawingFishId] = useState<string | null>(null);
   const fishTankRef = useRef<HTMLDivElement>(null);
 
   const backgroundColors = [
-    { name: '海洋蓝', value: '#1a3a4a' },
-    { name: '深海紫', value: '#2a1a4a' },
-    { name: '珊瑚橙', value: '#4a2a1a' },
-    { name: '海草绿', value: '#1a4a2a' },
-    { name: '沙滩黄', value: '#4a3a1a' },
+    { name: '海洋蓝', value: 'linear-gradient(180deg, #E0F0FF 0%, #B8E0F5 100%)', color: '#B8E0F5' },
+    { name: '深海蓝', value: 'linear-gradient(135deg, #051937 0%, #0A2463 100%)', color: '#0A2463' },
+    { name: '珊瑚橙', value: '#4a2a1a', color: '#4a2a1a' },
+    { name: '海草绿', value: '#1a4a2a', color: '#1a4a2a' },
+    { name: '沙滩黄', value: '#4a3a1a', color: '#4a3a1a' },
   ];
 
   const foodTypes = [
@@ -42,14 +44,15 @@ export default function Home() {
 
   // 数据迁移函数：将旧数据结构转换为新数据结构
   const migrateFishData = (fish: any) => {
-    // 检查是否是新数据结构（有 speedMultiplier 属性）
-    if ('speedMultiplier' in fish) {
+    // 检查是否是新数据结构（有 speedMultiplier 和 name 属性）
+    if ('speedMultiplier' in fish && 'name' in fish) {
       // 确保所有必需的属性都有有效的值
       return {
         ...fish,
         baseSpeedX: typeof fish.baseSpeedX === 'number' ? fish.baseSpeedX : (Math.random() - 0.5) * 4,
         baseSpeedY: typeof fish.baseSpeedY === 'number' ? fish.baseSpeedY : (Math.random() - 0.5) * 2,
         speedMultiplier: typeof fish.speedMultiplier === 'number' ? fish.speedMultiplier : 1,
+        name: typeof fish.name === 'string' ? fish.name : '',
         x: typeof fish.x === 'number' && !isNaN(fish.x) ? fish.x : 0,
         y: typeof fish.y === 'number' && !isNaN(fish.y) ? fish.y : 0,
       };
@@ -61,6 +64,7 @@ export default function Home() {
       baseSpeedX: fish.speedX || (Math.random() - 0.5) * 4,
       baseSpeedY: fish.speedY || (Math.random() - 0.5) * 2,
       speedMultiplier: 1,
+      name: fish.name || '',
       x: typeof fish.x === 'number' && !isNaN(fish.x) ? fish.x : 0,
       y: typeof fish.y === 'number' && !isNaN(fish.y) ? fish.y : 0,
     };
@@ -109,7 +113,6 @@ export default function Home() {
 
   const handleBackgroundChange = (color: string) => {
     setBackgroundColor(color);
-    setBackgroundExpanded(false);
   };
 
   // 修复喂食逻辑 - 撒入3-5颗鱼食
@@ -153,11 +156,26 @@ export default function Home() {
       image,
       baseSpeedX,
       baseSpeedY,
-      speedMultiplier: 1 // 默认速度倍率为 1
+      speedMultiplier: 1, // 默认速度倍率为 1
+      name: `${fishes.length + 1}号鱼` // 自动生成名称
     };
 
     setFishes([...fishes, newFish]);
     return newFish;
+  };
+
+  // 更新鱼的图片（用于重新绘制）
+  const updateFishImage = (fishId: string, newImage: string) => {
+    setFishes(fishes.map(fish =>
+      fish.id === fishId ? { ...fish, image: newImage } : fish
+    ));
+  };
+
+  // 开始重新绘制鱼
+  const handleRedrawFish = (fishId: string) => {
+    setRedrawingFishId(fishId);
+    setIsDrawing(true);
+    setFishEditDialogOpen(false);
   };
 
   // 移动鱼到暂存区
@@ -171,7 +189,8 @@ export default function Home() {
       image: fish.image,
       baseSpeedX: fish.baseSpeedX,
       baseSpeedY: fish.baseSpeedY,
-      speedMultiplier: fish.speedMultiplier
+      speedMultiplier: fish.speedMultiplier,
+      name: fish.name
     };
 
     setStagingFishes([...stagingFishes, stagingFish]);
@@ -196,7 +215,8 @@ export default function Home() {
       image: stagingFish.image,
       baseSpeedX: stagingFish.baseSpeedX,
       baseSpeedY: stagingFish.baseSpeedY,
-      speedMultiplier: stagingFish.speedMultiplier
+      speedMultiplier: stagingFish.speedMultiplier,
+      name: stagingFish.name || `${fishes.length + 1}号鱼`
     };
 
     setFishes([...fishes, newFish]);
@@ -211,7 +231,7 @@ export default function Home() {
   };
 
   // 更新鱼的属性
-  const updateFishProperties = (fishId: string, properties: Partial<{ size: number; speedMultiplier: number }>) => {
+  const updateFishProperties = (fishId: string, properties: Partial<{ size: number; speedMultiplier: number; name: string }>) => {
     setFishes(fishes.map(fish =>
       fish.id === fishId ? { ...fish, ...properties } : fish
     ));
@@ -281,20 +301,23 @@ export default function Home() {
               </Button>
               {backgroundExpanded && (
                 <div className="pl-6 space-y-2">
-                  {backgroundColors.map((color) => (
-                    <button
-                      key={color.value}
-                      onClick={() => handleBackgroundChange(color.value)}
-                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2 transition-colors"
-                      style={{ backgroundColor: backgroundColor === color.value ? `${color.value}22` : 'transparent' }}
-                    >
-                      <div
-                        className="w-6 h-6 rounded-full border-2 border-slate-300 dark:border-slate-600"
-                        style={{ backgroundColor: color.value }}
-                      />
-                      <span className="text-sm">{color.name}</span>
-                    </button>
-                  ))}
+                  {backgroundColors.map((color) => {
+                    const isGradient = color.value.includes('gradient');
+                    return (
+                      <button
+                        key={color.value}
+                        onClick={() => handleBackgroundChange(color.value)}
+                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2 transition-colors"
+                        style={isGradient ? { background: backgroundColor === color.value ? `${color.value}22` : 'transparent' } : { backgroundColor: backgroundColor === color.value ? `${color.value}22` : 'transparent' }}
+                      >
+                        <div
+                          className="w-6 h-6 rounded-full border-2 border-slate-300 dark:border-slate-600"
+                          style={{ background: color.value }}
+                        />
+                        <span className="text-sm">{color.name}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -350,7 +373,7 @@ export default function Home() {
                       <div key={fish.id} className="flex items-center gap-2">
                         <img
                           src={fish.image}
-                          alt="fish"
+                          alt={fish.name || '鱼'}
                           className="w-10 h-10 object-contain"
                         />
                         <div className="flex-1">
@@ -358,7 +381,7 @@ export default function Home() {
                             onClick={() => moveToTank(fish.id)}
                             className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
                           >
-                            放入鱼缸
+                            {fish.name || '未命名鱼'}
                           </button>
                         </div>
                         <Button
@@ -384,11 +407,20 @@ export default function Home() {
                     画一条鱼
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0">
+                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0" closeOnOutsideClick={false}>
                   <DialogHeader className="sr-only">
                     <DialogTitle>画一条鱼</DialogTitle>
                   </DialogHeader>
-                  <DrawingBoard onFishCreated={handleAddFish} onClose={() => setIsDrawing(false)} aiServiceEnabled={aiServiceEnabled} />
+                  <DrawingBoard 
+                    onFishCreated={handleAddFish} 
+                    onFishUpdated={redrawingFishId ? (image) => updateFishImage(redrawingFishId, image) : undefined}
+                    onClose={() => {
+                      setIsDrawing(false);
+                      setRedrawingFishId(null);
+                    }} 
+                    aiServiceEnabled={aiServiceEnabled}
+                    initialImage={redrawingFishId ? fishes.find(f => f.id === redrawingFishId)?.image : undefined}
+                  />
                 </DialogContent>
               </Dialog>
 
@@ -399,7 +431,7 @@ export default function Home() {
                     文生图
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-0">
+                <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-0" closeOnOutsideClick={false}>
                   <DialogHeader className="sr-only">
                     <DialogTitle>文生图生成鱼</DialogTitle>
                   </DialogHeader>
@@ -447,23 +479,28 @@ export default function Home() {
             </Button>
             {backgroundExpanded && (
               <div className="pl-6 space-y-2">
-                {backgroundColors.map((color) => (
-                  <button
-                    key={color.value}
-                    onClick={() => handleBackgroundChange(color.value)}
-                    className="w-full text-left px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-3 transition-all duration-200 hover:scale-[1.02]"
-                    style={{
-                      backgroundColor: backgroundColor === color.value ? `${color.value}22` : 'transparent',
-                      border: backgroundColor === color.value ? `2px solid ${color.value}` : '2px solid transparent'
-                    }}
-                  >
-                    <div
-                      className="w-8 h-8 rounded-full border-2 border-slate-300 dark:border-slate-600 shadow-sm"
-                      style={{ backgroundColor: color.value }}
-                    />
-                    <span className="text-sm font-medium">{color.name}</span>
-                  </button>
-                ))}
+                {backgroundColors.map((color) => {
+                  const isGradient = color.value.includes('gradient');
+                  return (
+                    <button
+                      key={color.value}
+                      onClick={() => handleBackgroundChange(color.value)}
+                      className="w-full text-left px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-3 transition-all duration-200 hover:scale-[1.02]"
+                      style={{
+                        ...isGradient 
+                          ? { background: backgroundColor === color.value ? `${color.value}22` : 'transparent' } 
+                          : { backgroundColor: backgroundColor === color.value ? `${color.value}22` : 'transparent' },
+                        border: backgroundColor === color.value ? `2px solid ${color.color}` : '2px solid transparent'
+                      }}
+                    >
+                      <div
+                        className="w-8 h-8 rounded-full border-2 border-slate-300 dark:border-slate-600 shadow-sm"
+                        style={{ background: color.value }}
+                      />
+                      <span className="text-sm font-medium">{color.name}</span>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -519,7 +556,7 @@ export default function Home() {
                     <div key={fish.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
                       <img
                         src={fish.image}
-                        alt="fish"
+                        alt={fish.name || '鱼'}
                         className="w-12 h-12 object-contain"
                       />
                       <div className="flex-1">
@@ -527,7 +564,7 @@ export default function Home() {
                           onClick={() => moveToTank(fish.id)}
                           className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium"
                         >
-                          放入鱼缸
+                          {fish.name || '未命名鱼'}
                         </button>
                         <p className="text-xs text-slate-500">大小: {Math.round(fish.size)}px</p>
                       </div>
@@ -553,12 +590,21 @@ export default function Home() {
                 画一条鱼
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0">
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0" closeOnOutsideClick={false}>
               <DialogHeader className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
                 <DialogTitle>画一条鱼</DialogTitle>
               </DialogHeader>
               <div className="p-4">
-                <DrawingBoard onFishCreated={handleAddFish} onClose={() => setIsDrawing(false)} aiServiceEnabled={aiServiceEnabled} />
+                <DrawingBoard 
+                  onFishCreated={handleAddFish}
+                  onFishUpdated={redrawingFishId ? (image) => updateFishImage(redrawingFishId, image) : undefined}
+                  onClose={() => {
+                    setIsDrawing(false);
+                    setRedrawingFishId(null);
+                  }} 
+                  aiServiceEnabled={aiServiceEnabled}
+                  initialImage={redrawingFishId ? fishes.find(f => f.id === redrawingFishId)?.image : undefined}
+                />
               </div>
             </DialogContent>
           </Dialog>
@@ -571,7 +617,7 @@ export default function Home() {
                 文生图生成鱼
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-0">
+            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-0" closeOnOutsideClick={false}>
               <DialogHeader className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
                 <DialogTitle>文生图生成鱼</DialogTitle>
               </DialogHeader>
@@ -621,6 +667,17 @@ export default function Home() {
                   src={selectedFish.image}
                   alt="fish"
                   className="max-w-[150px] max-h-[150px] object-contain"
+                />
+              </div>
+
+              {/* 名称编辑 */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">名称</label>
+                <Input
+                  value={selectedFish.name}
+                  onChange={(e) => updateFishProperties(selectedFish.id, { name: e.target.value })}
+                  placeholder="输入鱼的名称"
+                  className="w-full"
                 />
               </div>
 
@@ -691,6 +748,14 @@ export default function Home() {
 
               {/* 操作按钮 */}
               <div className="flex gap-2 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => handleRedrawFish(selectedFish.id)}
+                  className="flex-1"
+                >
+                  <Palette className="mr-2 h-4 w-4" />
+                  重新绘制
+                </Button>
                 <Button
                   variant="destructive"
                   className="flex-1"
