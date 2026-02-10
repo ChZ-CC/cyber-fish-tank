@@ -8,8 +8,9 @@ interface Fish {
   y: number;
   size: number;
   image: string;
-  speedX: number;
-  speedY: number;
+  baseSpeedX: number;
+  baseSpeedY: number;
+  speedMultiplier: number;
 }
 
 interface Food {
@@ -54,19 +55,23 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
           const uneatenFoods = foods.filter((f) => !f.eaten);
 
           return prevFishes.map((fish) => {
-            let newX = fish.x + fish.speedX;
-            let newY = fish.y + fish.speedY;
-            let newSpeedX = fish.speedX;
-            let newSpeedY = fish.speedY;
+            // 计算实际速度：基础速度 * 速度倍率
+            const actualSpeedX = fish.baseSpeedX * fish.speedMultiplier;
+            const actualSpeedY = fish.baseSpeedY * fish.speedMultiplier;
+
+            let newX = fish.x + actualSpeedX;
+            let newY = fish.y + actualSpeedY;
+            let newBaseSpeedX = fish.baseSpeedX;
+            let newBaseSpeedY = fish.baseSpeedY;
             let newSize = fish.size;
 
             // 边界碰撞检测
             if (newX <= 0 || newX + fish.size >= containerSize.width) {
-              newSpeedX = -newSpeedX;
+              newBaseSpeedX = -newBaseSpeedX;
               newX = Math.max(0, Math.min(newX, containerSize.width - fish.size));
             }
             if (newY <= 0 || newY + fish.size >= containerSize.height) {
-              newSpeedY = -newSpeedY;
+              newBaseSpeedY = -newBaseSpeedY;
               newY = Math.max(0, Math.min(newY, containerSize.height - fish.size));
             }
 
@@ -91,15 +96,15 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
                 nearestFood.x - (fish.x + fish.size / 2)
               );
 
-              newSpeedX += Math.cos(angle) * 0.3;
-              newSpeedY += Math.sin(angle) * 0.3;
+              newBaseSpeedX += Math.cos(angle) * 0.3;
+              newBaseSpeedY += Math.sin(angle) * 0.3;
 
-              // 限制速度
-              const maxSpeed = 5;
-              const speed = Math.sqrt(newSpeedX ** 2 + newSpeedY ** 2);
-              if (speed > maxSpeed) {
-                newSpeedX = (newSpeedX / speed) * maxSpeed;
-                newSpeedY = (newSpeedY / speed) * maxSpeed;
+              // 限制基础速度
+              const maxBaseSpeed = 5;
+              const baseSpeed = Math.sqrt(newBaseSpeedX ** 2 + newBaseSpeedY ** 2);
+              if (baseSpeed > maxBaseSpeed) {
+                newBaseSpeedX = (newBaseSpeedX / baseSpeed) * maxBaseSpeed;
+                newBaseSpeedY = (newBaseSpeedY / baseSpeed) * maxBaseSpeed;
               }
 
               // 检测是否吃到食料
@@ -124,8 +129,8 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
               ...fish,
               x: newX,
               y: newY,
-              speedX: newSpeedX,
-              speedY: newSpeedY,
+              baseSpeedX: newBaseSpeedX,
+              baseSpeedY: newBaseSpeedY,
               size: newSize,
             };
           });
@@ -184,26 +189,29 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
         })}
 
         {/* 鱼 */}
-        {fishes.map((fish) => (
-          <div
-            key={fish.id}
-            className="absolute transition-transform duration-100 cursor-pointer hover:scale-110"
-            onClick={(e) => onFishClick?.(fish.id, e)}
-            style={{
-              left: fish.x,
-              top: fish.y,
-              width: fish.size,
-              height: fish.size * 0.6,
-              transform: `scaleX(${fish.speedX > 0 ? 1 : -1})`,
-            }}
-          >
-            <img
-              src={fish.image}
-              alt="fish"
-              className="w-full h-full object-contain drop-shadow-lg"
-            />
-          </div>
-        ))}
+        {fishes.map((fish) => {
+          const actualSpeedX = fish.baseSpeedX * fish.speedMultiplier;
+          return (
+            <div
+              key={fish.id}
+              className="absolute transition-transform duration-100 cursor-pointer hover:scale-110"
+              onClick={(e) => onFishClick?.(fish.id, e)}
+              style={{
+                left: fish.x,
+                top: fish.y,
+                width: fish.size,
+                height: fish.size * 0.6,
+                transform: `scaleX(${actualSpeedX > 0 ? 1 : -1})`,
+              }}
+            >
+              <img
+                src={fish.image}
+                alt="fish"
+                className="w-full h-full object-contain drop-shadow-lg"
+              />
+            </div>
+          );
+        })}
       </div>
     );
   }

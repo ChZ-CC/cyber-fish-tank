@@ -4,15 +4,16 @@ import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Slider } from '@/components/ui/slider';
-import { Lightbulb, Fish, Plus, Palette, Type, Menu, X, Archive, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Lightbulb, Fish, Plus, Palette, Type, Menu, X, Archive, Trash2, ZoomIn, ZoomOut, Sparkles } from 'lucide-react';
 import FishTank from '@/components/FishTank';
 import DrawingBoard from '@/components/DrawingBoard';
 import ImageGenerator from '@/components/ImageGenerator';
 
 export default function Home() {
-  const [fishes, setFishes] = useState<Array<{ id: string; x: number; y: number; size: number; image: string; speedX: number; speedY: number }>>([]);
+  const [fishes, setFishes] = useState<Array<{ id: string; x: number; y: number; size: number; image: string; baseSpeedX: number; baseSpeedY: number; speedMultiplier: number }>>([]);
   const [foods, setFoods] = useState<Array<{ id: string; x: number; y: number; eaten: boolean; foodType: string; createdAt: number }>>([]);
-  const [stagingFishes, setStagingFishes] = useState<Array<{ id: string; size: number; image: string; speedX: number; speedY: number }>>([]);
+  const [stagingFishes, setStagingFishes] = useState<Array<{ id: string; size: number; image: string; baseSpeedX: number; baseSpeedY: number; speedMultiplier: number }>>([]);
   const [backgroundColor, setBackgroundColor] = useState('#1a3a4a');
   const [selectedFood, setSelectedFood] = useState<string | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -22,6 +23,7 @@ export default function Home() {
   const [stagingExpanded, setStagingExpanded] = useState(false);
   const [selectedFishId, setSelectedFishId] = useState<string | null>(null);
   const [fishEditDialogOpen, setFishEditDialogOpen] = useState(false);
+  const [aiServiceEnabled, setAiServiceEnabled] = useState(false);
   const fishTankRef = useRef<HTMLDivElement>(null);
 
   const backgroundColors = [
@@ -38,6 +40,32 @@ export default function Home() {
     { name: '虾米', color: '#FFE66D' },
   ];
 
+  // 数据迁移函数：将旧数据结构转换为新数据结构
+  const migrateFishData = (fish: any) => {
+    // 检查是否是新数据结构（有 speedMultiplier 属性）
+    if ('speedMultiplier' in fish) {
+      // 确保所有必需的属性都有有效的值
+      return {
+        ...fish,
+        baseSpeedX: typeof fish.baseSpeedX === 'number' ? fish.baseSpeedX : (Math.random() - 0.5) * 4,
+        baseSpeedY: typeof fish.baseSpeedY === 'number' ? fish.baseSpeedY : (Math.random() - 0.5) * 2,
+        speedMultiplier: typeof fish.speedMultiplier === 'number' ? fish.speedMultiplier : 1,
+        x: typeof fish.x === 'number' && !isNaN(fish.x) ? fish.x : 0,
+        y: typeof fish.y === 'number' && !isNaN(fish.y) ? fish.y : 0,
+      };
+    }
+
+    // 旧数据结构，需要迁移
+    return {
+      ...fish,
+      baseSpeedX: fish.speedX || (Math.random() - 0.5) * 4,
+      baseSpeedY: fish.speedY || (Math.random() - 0.5) * 2,
+      speedMultiplier: 1,
+      x: typeof fish.x === 'number' && !isNaN(fish.x) ? fish.x : 0,
+      y: typeof fish.y === 'number' && !isNaN(fish.y) ? fish.y : 0,
+    };
+  };
+
   // 持久化存储
   useEffect(() => {
     const savedFishes = localStorage.getItem('fishtank-fishes');
@@ -46,14 +74,18 @@ export default function Home() {
 
     if (savedFishes) {
       try {
-        setFishes(JSON.parse(savedFishes));
+        const parsedFishes = JSON.parse(savedFishes);
+        const migratedFishes = parsedFishes.map(migrateFishData);
+        setFishes(migratedFishes);
       } catch (e) {
         console.error('Failed to load fishes:', e);
       }
     }
     if (savedStagingFishes) {
       try {
-        setStagingFishes(JSON.parse(savedStagingFishes));
+        const parsedStagingFishes = JSON.parse(savedStagingFishes);
+        const migratedStagingFishes = parsedStagingFishes.map(migrateFishData);
+        setStagingFishes(migratedStagingFishes);
       } catch (e) {
         console.error('Failed to load staging fishes:', e);
       }
@@ -110,8 +142,8 @@ export default function Home() {
     const rect = container.getBoundingClientRect();
     const x = Math.random() * (rect.width - size);
     const y = Math.random() * (rect.height - size);
-    const speedX = (Math.random() - 0.5) * 4;
-    const speedY = (Math.random() - 0.5) * 2;
+    const baseSpeedX = (Math.random() - 0.5) * 4;
+    const baseSpeedY = (Math.random() - 0.5) * 2;
 
     const newFish = {
       id: Date.now().toString(),
@@ -119,8 +151,9 @@ export default function Home() {
       y,
       size,
       image,
-      speedX,
-      speedY
+      baseSpeedX,
+      baseSpeedY,
+      speedMultiplier: 1 // 默认速度倍率为 1
     };
 
     setFishes([...fishes, newFish]);
@@ -136,8 +169,9 @@ export default function Home() {
       id: fish.id,
       size: fish.size,
       image: fish.image,
-      speedX: fish.speedX,
-      speedY: fish.speedY
+      baseSpeedX: fish.baseSpeedX,
+      baseSpeedY: fish.baseSpeedY,
+      speedMultiplier: fish.speedMultiplier
     };
 
     setStagingFishes([...stagingFishes, stagingFish]);
@@ -160,8 +194,9 @@ export default function Home() {
       y: Math.random() * (rect.height - size),
       size,
       image: stagingFish.image,
-      speedX: stagingFish.speedX,
-      speedY: stagingFish.speedY
+      baseSpeedX: stagingFish.baseSpeedX,
+      baseSpeedY: stagingFish.baseSpeedY,
+      speedMultiplier: stagingFish.speedMultiplier
     };
 
     setFishes([...fishes, newFish]);
@@ -176,7 +211,7 @@ export default function Home() {
   };
 
   // 更新鱼的属性
-  const updateFishProperties = (fishId: string, properties: Partial<{ size: number; speedX: number; speedY: number }>) => {
+  const updateFishProperties = (fishId: string, properties: Partial<{ size: number; speedMultiplier: number }>) => {
     setFishes(fishes.map(fish =>
       fish.id === fishId ? { ...fish, ...properties } : fish
     ));
@@ -198,13 +233,23 @@ export default function Home() {
           <Fish className="text-blue-500" />
           虚拟鱼缸
         </h1>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-        >
-          {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </Button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-purple-500" />
+            <Switch
+              checked={aiServiceEnabled}
+              onCheckedChange={setAiServiceEnabled}
+              className="data-[state=checked]:bg-purple-600"
+            />
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+          >
+            {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </Button>
+        </div>
       </div>
 
       {/* 移动端侧边栏（底部抽屉） */}
@@ -343,7 +388,7 @@ export default function Home() {
                   <DialogHeader className="sr-only">
                     <DialogTitle>画一条鱼</DialogTitle>
                   </DialogHeader>
-                  <DrawingBoard onFishCreated={handleAddFish} onClose={() => setIsDrawing(false)} />
+                  <DrawingBoard onFishCreated={handleAddFish} onClose={() => setIsDrawing(false)} aiServiceEnabled={aiServiceEnabled} />
                 </DialogContent>
               </Dialog>
 
@@ -358,7 +403,7 @@ export default function Home() {
                   <DialogHeader className="sr-only">
                     <DialogTitle>文生图生成鱼</DialogTitle>
                   </DialogHeader>
-                  <ImageGenerator onFishCreated={handleAddFish} onClose={() => setIsGenerating(false)} />
+                  <ImageGenerator onFishCreated={handleAddFish} onClose={() => setIsGenerating(false)} aiServiceEnabled={aiServiceEnabled} />
                 </DialogContent>
               </Dialog>
             </div>
@@ -376,6 +421,17 @@ export default function Home() {
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
             打造你的专属鱼缸
           </p>
+          <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-purple-500" />
+              <span className="text-sm font-medium">AI 服务</span>
+            </div>
+            <Switch
+              checked={aiServiceEnabled}
+              onCheckedChange={setAiServiceEnabled}
+              className="data-[state=checked]:bg-purple-600"
+            />
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {/* 背景灯 */}
@@ -502,7 +558,7 @@ export default function Home() {
                 <DialogTitle>画一条鱼</DialogTitle>
               </DialogHeader>
               <div className="p-4">
-                <DrawingBoard onFishCreated={handleAddFish} onClose={() => setIsDrawing(false)} />
+                <DrawingBoard onFishCreated={handleAddFish} onClose={() => setIsDrawing(false)} aiServiceEnabled={aiServiceEnabled} />
               </div>
             </DialogContent>
           </Dialog>
@@ -520,7 +576,7 @@ export default function Home() {
                 <DialogTitle>文生图生成鱼</DialogTitle>
               </DialogHeader>
               <div className="p-4">
-                <ImageGenerator onFishCreated={handleAddFish} onClose={() => setIsGenerating(false)} />
+                <ImageGenerator onFishCreated={handleAddFish} onClose={() => setIsGenerating(false)} aiServiceEnabled={aiServiceEnabled} />
               </div>
             </DialogContent>
           </Dialog>
@@ -600,68 +656,37 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* 水平速度控制 */}
+              {/* 速度倍率控制 */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium">水平速度</label>
-                  <span className="text-sm text-slate-500">{selectedFish.speedX.toFixed(1)}</span>
+                  <label className="text-sm font-medium">速度倍率</label>
+                  <span className="text-sm text-slate-500">{selectedFish.speedMultiplier.toFixed(2)}x</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
                     variant="outline"
                     size="icon"
-                    onClick={() => updateFishProperties(selectedFish.id, { speedX: Math.max(-10, selectedFish.speedX - 0.5) })}
+                    onClick={() => updateFishProperties(selectedFish.id, { speedMultiplier: Math.max(0.5, selectedFish.speedMultiplier - 0.1) })}
                   >
                     <ZoomOut className="h-4 w-4" />
                   </Button>
                   <Slider
-                    value={[selectedFish.speedX]}
-                    min={-10}
-                    max={10}
-                    step={0.5}
-                    onValueChange={([value]) => updateFishProperties(selectedFish.id, { speedX: value })}
+                    value={[selectedFish.speedMultiplier]}
+                    min={0.5}
+                    max={2}
+                    step={0.1}
+                    onValueChange={([value]) => updateFishProperties(selectedFish.id, { speedMultiplier: value })}
                     className="flex-1"
                   />
                   <Button
                     variant="outline"
                     size="icon"
-                    onClick={() => updateFishProperties(selectedFish.id, { speedX: Math.min(10, selectedFish.speedX + 0.5) })}
+                    onClick={() => updateFishProperties(selectedFish.id, { speedMultiplier: Math.min(2, selectedFish.speedMultiplier + 0.1) })}
                   >
                     <ZoomIn className="h-4 w-4" />
                   </Button>
                 </div>
-              </div>
-
-              {/* 垂直速度控制 */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium">垂直速度</label>
-                  <span className="text-sm text-slate-500">{selectedFish.speedY.toFixed(1)}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => updateFishProperties(selectedFish.id, { speedY: Math.max(-10, selectedFish.speedY - 0.5) })}
-                  >
-                    <ZoomOut className="h-4 w-4" />
-                  </Button>
-                  <Slider
-                    value={[selectedFish.speedY]}
-                    min={-10}
-                    max={10}
-                    step={0.5}
-                    onValueChange={([value]) => updateFishProperties(selectedFish.id, { speedY: value })}
-                    className="flex-1"
-                  />
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => updateFishProperties(selectedFish.id, { speedY: Math.min(10, selectedFish.speedY + 0.5) })}
-                  >
-                    <ZoomIn className="h-4 w-4" />
-                  </Button>
-                </div>
+                <p className="text-xs text-slate-500">调整鱼移动速度的倍率，范围：0.5x - 2x</p>
               </div>
 
               {/* 操作按钮 */}

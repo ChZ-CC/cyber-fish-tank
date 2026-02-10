@@ -12,9 +12,10 @@ import { Check, Eraser, Palette, RefreshCw, Droplet } from 'lucide-react';
 interface DrawingBoardProps {
   onFishCreated: (image: string) => void;
   onClose: () => void;
+  aiServiceEnabled: boolean;
 }
 
-export default function DrawingBoard({ onFishCreated, onClose }: DrawingBoardProps) {
+export default function DrawingBoard({ onFishCreated, onClose, aiServiceEnabled }: DrawingBoardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [brushSize, setBrushSize] = useState([5]);
@@ -159,6 +160,14 @@ export default function DrawingBoard({ onFishCreated, onClose }: DrawingBoardPro
   const analyzeDrawing = async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    // 如果 AI 服务关闭，直接允许添加鱼
+    if (!aiServiceEnabled) {
+      setAlertType('success');
+      setAlertMessage('绘制完成！是否加入鱼缸？');
+      setShowAlert(true);
+      return;
+    }
 
     setIsAnalyzing(true);
 
@@ -362,7 +371,7 @@ export default function DrawingBoard({ onFishCreated, onClose }: DrawingBoardPro
           ) : (
             <>
               <Check className="w-4 h-4" />
-              完成绘制
+              {aiServiceEnabled ? '分析绘画' : '完成绘制'}
             </>
           )}
         </Button>

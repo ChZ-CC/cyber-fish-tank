@@ -5,14 +5,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Loader2, Sparkles, Wand2 } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Loader2, Sparkles, Wand2, Lock } from 'lucide-react';
 
 interface ImageGeneratorProps {
   onFishCreated: (image: string) => void;
   onClose: () => void;
+  aiServiceEnabled: boolean;
 }
 
-export default function ImageGenerator({ onFishCreated, onClose }: ImageGeneratorProps) {
+export default function ImageGenerator({ onFishCreated, onClose, aiServiceEnabled }: ImageGeneratorProps) {
   const [prompt, setPrompt] = useState('');
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -64,8 +66,17 @@ export default function ImageGenerator({ onFishCreated, onClose }: ImageGenerato
 
   return (
     <div className="flex flex-col h-full gap-6">
+      {/* AI 服务禁用提示 */}
+      {!aiServiceEnabled && (
+        <Alert className="bg-amber-50 border-amber-200 dark:bg-amber-950 dark:border-amber-800">
+          <Lock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+          <AlertDescription className="text-amber-800 dark:text-amber-200">
+            AI 服务未开启。请在右上角开启"AI 服务"开关以使用文生图功能。
+          </AlertDescription>
+        </Alert>
+      )}
       {/* 输入区域 */}
-      <div className="space-y-4">
+      <div className={`space-y-4 ${!aiServiceEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
         <div>
           <Label htmlFor="prompt" className="text-base font-medium mb-2 block">
             描述你想要的鱼
