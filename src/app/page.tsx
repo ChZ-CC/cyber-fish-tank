@@ -6,7 +6,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
-import { Lightbulb, Fish, Plus, Palette, Type, Menu, X, Archive, Trash2, ZoomIn, ZoomOut, Sparkles } from 'lucide-react';
+import { Lightbulb, Fish, Plus, Palette, Type, Menu, X, Archive, Trash2, ZoomIn, ZoomOut, Sparkles, Download } from 'lucide-react';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 import FishTank from '@/components/FishTank';
 import DrawingBoard from '@/components/DrawingBoard';
 import ImageGenerator from '@/components/ImageGenerator';
@@ -26,6 +28,7 @@ export default function Home() {
   const [fishEditDialogOpen, setFishEditDialogOpen] = useState(false);
   const [aiServiceEnabled, setAiServiceEnabled] = useState(false);
   const [redrawingFishId, setRedrawingFishId] = useState<string | null>(null);
+  const [editingFishName, setEditingFishName] = useState(false);
   const fishTankRef = useRef<HTMLDivElement>(null);
 
   const backgroundColors = [
@@ -164,6 +167,97 @@ export default function Home() {
     return newFish;
   };
 
+  // 批量导入鱼图片（支持图片和 zip 格式）
+  const handleImportFishes = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    const container = fishTankRef.current;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const size = 60;
+
+    const newFishes: Array<{ id: string; x: number; y: number; size: number; image: string; baseSpeedX: number; baseSpeedY: number; speedMultiplier: number; name: string }> = [];
+    let importedCount = 0;
+
+    const processFile = async (file: File, index: number) => {
+      // 检查是否是 zip 文件
+      if (file.type === 'application/zip' || file.name.endsWith('.zip')) {
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const zip = await JSZip.loadAsync(arrayBuffer);
+          
+          // 遍历 zip 中的所有文件
+          for (const [filename, zipEntry] of Object.entries(zip.files)) {
+            // 只处理图片文件
+            if (!zipEntry.dir && (filename.match(/\.(jpg|jpeg|png|gif|webp)$/i))) {
+              const blob = await zipEntry.async('blob');
+              const reader = new FileReader();
+              await new Promise<void>((resolve) => {
+                reader.onload = (e) => {
+                  const image = e.target?.result as string;
+                  const newFish = {
+                    id: `import-${Date.now()}-${importedCount}`,
+                    x: Math.random() * (rect.width - size),
+                    y: Math.random() * (rect.height - size),
+                    size,
+                    image,
+                    baseSpeedX: (Math.random() - 0.5) * 4,
+                    baseSpeedY: (Math.random() - 0.5) * 2,
+                    speedMultiplier: 1,
+                    name: filename.replace(/\.[^/.]+$/, '') // 使用文件名（不带扩展名）作为鱼名
+                  };
+                  newFishes.push(newFish);
+                  importedCount++;
+                  resolve();
+                };
+                reader.readAsDataURL(blob);
+              });
+            }
+          }
+        } catch (error) {
+          console.error('解压 zip 文件失败:', error);
+          alert('解压 zip 文件失败，请检查文件格式');
+        }
+      } else {
+        // 处理普通图片文件
+        return new Promise<void>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const image = e.target?.result as string;
+            const newFish = {
+              id: `import-${Date.now()}-${importedCount}`,
+              x: Math.random() * (rect.width - size),
+              y: Math.random() * (rect.height - size),
+              size,
+              image,
+              baseSpeedX: (Math.random() - 0.5) * 4,
+              baseSpeedY: (Math.random() - 0.5) * 2,
+              speedMultiplier: 1,
+              name: file.name.replace(/\.[^/.]+$/, '') // 使用文件名（不带扩展名）作为鱼名
+            };
+            newFishes.push(newFish);
+            importedCount++;
+            resolve();
+          };
+          reader.readAsDataURL(file);
+        });
+      }
+    };
+
+    // 处理所有文件
+    await Promise.all(Array.from(files).map((file, index) => processFile(file, index)));
+
+    // 添加到鱼缸
+    if (newFishes.length > 0) {
+      setFishes([...fishes, ...newFishes]);
+      alert(`成功导入 ${newFishes.length} 条鱼！`);
+    } else {
+      alert('未找到有效的图片文件');
+    }
+  };
+
   // 更新鱼的图片（用于重新绘制）
   const updateFishImage = (fishId: string, newImage: string) => {
     setFishes(fishes.map(fish =>
@@ -176,6 +270,58 @@ export default function Home() {
     setRedrawingFishId(fishId);
     setIsDrawing(true);
     setFishEditDialogOpen(false);
+  };
+
+  // 导出单个鱼
+  const exportSingleFish = async (fishId: string) => {
+    const fish = fishes.find(f => f.id === fishId);
+    if (!fish) return;
+
+    try {
+      // 将 base64 图片转换为 blob
+      const response = await fetch(fish.image);
+      const blob = await response.blob();
+      
+      // 使用鱼的名称作为文件名，如果名称为空则使用 ID
+      const fileName = `${fish.name || fish.id}.png`;
+      
+      // 下载文件
+      saveAs(blob, fileName);
+    } catch (error) {
+      console.error('导出失败:', error);
+      alert('导出失败，请重试');
+    }
+  };
+
+  // 导出所有鱼
+  const exportAllFishes = async () => {
+    if (fishes.length === 0) {
+      alert('没有鱼可以导出');
+      return;
+    }
+
+    try {
+      const zip = new JSZip();
+      
+      // 添加每条鱼的图片到 ZIP
+      for (const fish of fishes) {
+        const response = await fetch(fish.image);
+        const blob = await response.blob();
+        
+        // 使用鱼的名称作为文件名，如果名称为空则使用 ID
+        const fileName = `${fish.name || fish.id}.png`;
+        zip.file(fileName, blob);
+      }
+      
+      // 生成 ZIP 文件
+      const content = await zip.generateAsync({ type: 'blob' });
+      
+      // 下载 ZIP 文件
+      saveAs(content, 'fishes.zip');
+    } catch (error) {
+      console.error('导出失败:', error);
+      alert('导出失败，请重试');
+    }
   };
 
   // 移动鱼到暂存区
@@ -228,6 +374,7 @@ export default function Home() {
     e.stopPropagation();
     setSelectedFishId(fishId);
     setFishEditDialogOpen(true);
+    setEditingFishName(false);
   };
 
   // 更新鱼的属性
@@ -251,14 +398,14 @@ export default function Home() {
       <div className="md:hidden flex items-center justify-between p-4 bg-white dark:bg-slate-800 shadow-lg">
         <h1 className="text-lg font-bold flex items-center gap-2">
           <Fish className="text-blue-500" />
-          虚拟鱼缸
+          赛博养鱼
         </h1>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 opacity-50" title="AI 服务已禁用">
             <Sparkles className="h-4 w-4 text-purple-500" />
             <Switch
               checked={aiServiceEnabled}
-              onCheckedChange={setAiServiceEnabled}
+              disabled
               className="data-[state=checked]:bg-purple-600"
             />
           </div>
@@ -398,8 +545,8 @@ export default function Home() {
               )}
             </div>
 
-            {/* 添加鱼按钮 */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* 添加鱼 */}
+            <div className="space-y-2">
               <Dialog open={isDrawing} onOpenChange={setIsDrawing}>
                 <DialogTrigger asChild>
                   <Button variant="outline" className="w-full">
@@ -439,6 +586,36 @@ export default function Home() {
                 </DialogContent>
               </Dialog>
             </div>
+
+            {/* 导入导出 */}
+            <div className="space-y-2">
+              <input
+                type="file"
+                id="fish-import-mobile"
+                multiple
+                accept="image/*,.zip"
+                className="hidden"
+                onChange={handleImportFishes}
+              />
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => document.getElementById('fish-import-mobile')?.click()}
+              >
+                <Download className="mr-2 h-4 w-4 text-blue-500" />
+                批量导入（支持ZIP）
+              </Button>
+              {fishes.length > 0 && (
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start"
+                  onClick={exportAllFishes}
+                >
+                  <Download className="mr-2 h-4 w-4 text-green-500" />
+                  导出所有鱼（ZIP）
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -448,7 +625,7 @@ export default function Home() {
         <div className="p-6 border-b border-slate-200 dark:border-slate-700">
           <h1 className="text-2xl font-bold flex items-center gap-3">
             <Fish className="text-blue-500" />
-            虚拟鱼缸
+            赛博养鱼
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
             打造你的专属鱼缸
@@ -458,11 +635,13 @@ export default function Home() {
               <Sparkles className="h-4 w-4 text-purple-500" />
               <span className="text-sm font-medium">AI 服务</span>
             </div>
-            <Switch
-              checked={aiServiceEnabled}
-              onCheckedChange={setAiServiceEnabled}
-              className="data-[state=checked]:bg-purple-600"
-            />
+            <div className="flex items-center gap-2 opacity-50" title="AI 服务已禁用">
+              <Switch
+                checked={aiServiceEnabled}
+                disabled
+                className="data-[state=checked]:bg-purple-600"
+              />
+            </div>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -582,50 +761,81 @@ export default function Home() {
             )}
           </div>
 
-          {/* 添加鱼 - 画板 */}
-          <Dialog open={isDrawing} onOpenChange={setIsDrawing}>
-            <DialogTrigger asChild>
-              <Button variant="outline" className="w-full justify-start h-11">
-                <Palette className="mr-2 h-4 w-4 text-purple-500" />
-                画一条鱼
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0" closeOnOutsideClick={false}>
-              <DialogHeader className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
-                <DialogTitle>画一条鱼</DialogTitle>
-              </DialogHeader>
-              <div className="p-4">
-                <DrawingBoard 
-                  onFishCreated={handleAddFish}
-                  onFishUpdated={redrawingFishId ? (image) => updateFishImage(redrawingFishId, image) : undefined}
-                  onClose={() => {
-                    setIsDrawing(false);
-                    setRedrawingFishId(null);
-                  }} 
-                  aiServiceEnabled={aiServiceEnabled}
-                  initialImage={redrawingFishId ? fishes.find(f => f.id === redrawingFishId)?.image : undefined}
-                />
-              </div>
-            </DialogContent>
-          </Dialog>
+          {/* 添加鱼 */}
+          <div className="space-y-2">
+            <Dialog open={isDrawing} onOpenChange={setIsDrawing}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="w-full justify-start h-11">
+                  <Palette className="mr-2 h-4 w-4 text-purple-500" />
+                  画一条鱼
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0" closeOnOutsideClick={false}>
+                <DialogHeader className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+                  <DialogTitle>画一条鱼</DialogTitle>
+                </DialogHeader>
+                <div className="p-4">
+                  <DrawingBoard 
+                    onFishCreated={handleAddFish}
+                    onFishUpdated={redrawingFishId ? (image) => updateFishImage(redrawingFishId, image) : undefined}
+                    onClose={() => {
+                      setIsDrawing(false);
+                      setRedrawingFishId(null);
+                    }} 
+                    aiServiceEnabled={aiServiceEnabled}
+                    initialImage={redrawingFishId ? fishes.find(f => f.id === redrawingFishId)?.image : undefined}
+                  />
+                </div>
+              </DialogContent>
+            </Dialog>
 
-          {/* 添加鱼 - 文生图 */}
-          <Dialog open={isGenerating} onOpenChange={setIsGenerating}>
-            <DialogTrigger asChild>
-              <Button variant="outline" className="w-full justify-start h-11">
-                <Plus className="mr-2 h-4 w-4 text-green-500" />
-                文生图生成鱼
+            <Dialog open={isGenerating} onOpenChange={setIsGenerating}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="w-full justify-start h-11">
+                  <Plus className="mr-2 h-4 w-4 text-green-500" />
+                  文生图生成鱼
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-0" closeOnOutsideClick={false}>
+                <DialogHeader className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+                  <DialogTitle>文生图生成鱼</DialogTitle>
+                </DialogHeader>
+                <div className="p-4">
+                  <ImageGenerator onFishCreated={handleAddFish} onClose={() => setIsGenerating(false)} aiServiceEnabled={aiServiceEnabled} />
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          {/* 导入导出 */}
+          <div className="space-y-2">
+            <input
+              type="file"
+              id="fish-import"
+              multiple
+              accept="image/*,.zip"
+              className="hidden"
+              onChange={handleImportFishes}
+            />
+            <Button
+              variant="outline"
+              className="w-full justify-start h-11"
+              onClick={() => document.getElementById('fish-import')?.click()}
+            >
+              <Download className="mr-2 h-4 w-4 text-blue-500" />
+              批量导入（支持ZIP）
+            </Button>
+            {fishes.length > 0 && (
+              <Button 
+                variant="outline" 
+                className="w-full justify-start h-11"
+                onClick={exportAllFishes}
+              >
+                <Download className="mr-2 h-4 w-4 text-green-500" />
+                导出所有鱼（ZIP）
               </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-0" closeOnOutsideClick={false}>
-              <DialogHeader className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
-                <DialogTitle>文生图生成鱼</DialogTitle>
-              </DialogHeader>
-              <div className="p-4">
-                <ImageGenerator onFishCreated={handleAddFish} onClose={() => setIsGenerating(false)} aiServiceEnabled={aiServiceEnabled} />
-              </div>
-            </DialogContent>
-          </Dialog>
+            )}
+          </div>
         </div>
 
         <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
@@ -654,7 +864,12 @@ export default function Home() {
       </div>
 
       {/* 鱼编辑对话框 */}
-      <Dialog open={fishEditDialogOpen} onOpenChange={setFishEditDialogOpen}>
+      <Dialog open={fishEditDialogOpen} onOpenChange={(open) => {
+        setFishEditDialogOpen(open);
+        if (!open) {
+          setEditingFishName(false);
+        }
+      }}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>编辑鱼</DialogTitle>
@@ -670,15 +885,42 @@ export default function Home() {
                 />
               </div>
 
-              {/* 名称编辑 */}
+              {/* 名称显示和编辑 */}
               <div className="space-y-2">
-                <label className="text-sm font-medium">名称</label>
-                <Input
-                  value={selectedFish.name}
-                  onChange={(e) => updateFishProperties(selectedFish.id, { name: e.target.value })}
-                  placeholder="输入鱼的名称"
-                  className="w-full"
-                />
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">名称</label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEditingFishName(!editingFishName)}
+                    className="h-7 px-2"
+                  >
+                    {editingFishName ? (
+                      <>
+                        <X className="h-3 w-3 mr-1" />
+                        取消
+                      </>
+                    ) : (
+                      <>
+                        <Type className="h-3 w-3 mr-1" />
+                        编辑
+                      </>
+                    )}
+                  </Button>
+                </div>
+                {editingFishName ? (
+                  <Input
+                    value={selectedFish.name}
+                    onChange={(e) => updateFishProperties(selectedFish.id, { name: e.target.value })}
+                    placeholder="输入鱼的名称"
+                    className="w-full"
+                    autoFocus
+                  />
+                ) : (
+                  <div className="px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-md border border-slate-200 dark:border-slate-700">
+                    <span className="text-sm">{selectedFish.name || '未命名'}</span>
+                  </div>
+                )}
               </div>
 
               {/* 大小控制 */}
@@ -747,7 +989,7 @@ export default function Home() {
               </div>
 
               {/* 操作按钮 */}
-              <div className="flex gap-2 pt-4">
+              <div className="flex flex-wrap gap-2 pt-4">
                 <Button
                   variant="outline"
                   onClick={() => handleRedrawFish(selectedFish.id)}
@@ -755,6 +997,14 @@ export default function Home() {
                 >
                   <Palette className="mr-2 h-4 w-4" />
                   重新绘制
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => exportSingleFish(selectedFish.id)}
+                  className="flex-1"
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  导出
                 </Button>
                 <Button
                   variant="destructive"
@@ -765,13 +1015,14 @@ export default function Home() {
                   移到暂存区
                 </Button>
                 <Button
-                  variant="outline"
                   onClick={() => {
                     setFishEditDialogOpen(false);
                     setSelectedFishId(null);
+                    setEditingFishName(false);
                   }}
+                  className="flex-1 bg-slate-900 text-white hover:bg-slate-800"
                 >
-                  关闭
+                  确定
                 </Button>
               </div>
             </div>

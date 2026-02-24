@@ -316,50 +316,10 @@ export default function DrawingBoard({ onFishCreated, onFishUpdated, onClose, ai
   }, [isPickingColor]);
 
   const analyzeDrawing = async () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    // 如果 AI 服务关闭，直接允许添加鱼
-    if (!aiServiceEnabled) {
-      setAlertType('success');
-      setAlertMessage('绘制完成！是否加入鱼缸？');
-      setShowAlert(true);
-      return;
-    }
-
-    setIsAnalyzing(true);
-
-    try {
-      // 将 canvas 转换为 base64
-      const imageData = canvas.toDataURL('image/png');
-
-      // 调用后端 API 进行分析
-      const response = await fetch('/api/analyze-fish', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ image: imageData }),
-      });
-
-      const result = await response.json();
-
-      if (result.isFish) {
-        setAlertType('success');
-        setAlertMessage('检测到这是一条鱼！是否加入鱼缸？');
-        setShowAlert(true);
-      } else {
-        setAlertType('error');
-        setAlertMessage('这看起来不是一条鱼，请重新绘制！');
-        setShowAlert(true);
-      }
-    } catch (error) {
-      setAlertType('error');
-      setAlertMessage('分析失败，请重试');
-      setShowAlert(true);
-    } finally {
-      setIsAnalyzing(false);
-    }
+    // 直接允许添加鱼，不再进行 AI 分析
+    setAlertType('success');
+    setAlertMessage('绘制完成！是否加入鱼缸？');
+    setShowAlert(true);
   };
 
   const handleConfirm = () => {
