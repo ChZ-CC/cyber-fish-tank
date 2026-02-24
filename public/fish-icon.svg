@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="fishGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4ECDC4;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#44A08D;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- 鱼身 -->
+  <ellipse cx="50" cy="50" rx="30" ry="20" fill="url(#fishGradient)" />
+  <!-- 鱼尾 -->
+  <path d="M 80 50 Q 95 30 90 50 Q 95 70 80 50" fill="#44A08D" />
+  <!-- 鱼鳍 -->
+  <path d="M 45 30 Q 50 20 55 30" fill="#44A08D" />
+  <path d="M 45 70 Q 50 80 55 70" fill="#44A08D" />
+  <!-- 眼睛 -->
+  <circle cx="35" cy="48" r="5" fill="white" />
+  <circle cx="33" cy="46" r="2" fill="black" />
+  <!-- 嘴巴 -->
+  <path d="M 22 50 Q 25 55 22 60" fill="none" stroke="#44A08D" stroke-width="2" />
+  <!-- 鳞片 -->
+  <path d="M 40 45 Q 45 43 50 45 Q 45 47 40 45" fill="rgba(255,255,255,0.3)" />
+  <path d="M 55 45 Q 60 43 65 45 Q 60 47 55 45" fill="rgba(255,255,255,0.3)" />
+  <path d="M 40 55 Q 45 53 50 55 Q 45 57 40 55" fill="rgba(255,255,255,0.3)" />
+  <path d="M 55 55 Q 60 53 65 55 Q 60 57 55 55" fill="rgba(255,255,255,0.3)" />
+</svg>
