@@ -1,6 +1,6 @@
 'use client';
 
-import { forwardRef, useEffect, useState, Dispatch, SetStateAction, useRef } from 'react';
+import { forwardRef, useEffect, useState, Dispatch, SetStateAction, useRef, useImperativeHandle } from 'react';
 import { MyFish, Food } from '@/lib/types';
 
 interface FishTankProps {
@@ -31,8 +31,11 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
   }, ref) => {
     const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
     const [fishImages, setFishImages] = useState<Map<string, string>>(new Map());
-    const containerRef = (ref as React.RefObject<HTMLDivElement>) || null;
+    const localContainerRef = useRef<HTMLDivElement>(null);
     const foodsRef = useRef(foods);
+
+    // 处理 forwardRef
+    useImperativeHandle(ref, () => localContainerRef.current!, []);
 
     useEffect(() => {
       foodsRef.current = foods;
@@ -77,11 +80,11 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
     }, [containerSize, fishes, setFishes]);
 
     useEffect(() => {
-      if (containerRef?.current) {
-        const rect = containerRef.current.getBoundingClientRect();
+      if (localContainerRef?.current) {
+        const rect = localContainerRef.current.getBoundingClientRect();
         setContainerSize({ width: rect.width, height: rect.height });
       }
-    }, [containerRef]);
+    }, [localContainerRef]);
 
     // 加载鱼的图片
     useEffect(() => {
@@ -229,11 +232,11 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
     }, [containerSize]);
 
     const handleTankClick = (e: React.MouseEvent<HTMLDivElement>) => {
-      if (!feedingMode || !onTankClick || !containerRef?.current) return;
+      if (!feedingMode || !onTankClick || !localContainerRef?.current) return;
 
       e.stopPropagation();
 
-      const rect = containerRef.current.getBoundingClientRect();
+      const rect = localContainerRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
 
@@ -242,7 +245,7 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
 
     return (
       <div
-        ref={containerRef}
+        ref={localContainerRef}
         className={`w-full h-full overflow-hidden relative ${feedingMode ? 'cursor-crosshair' : ''}`}
         style={{ background: backgroundColor, transition: 'background 0.5s ease' }}
         onClick={handleTankClick}

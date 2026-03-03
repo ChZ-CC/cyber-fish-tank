@@ -19,7 +19,7 @@ import {
   Sparkles,
   Download,
   Upload,
-  Cookie,
+  Pizza,
   LucideEdit
 } from 'lucide-react';
 import JSZip from 'jszip';
@@ -670,7 +670,7 @@ export default function Home() {
               setMenuOpen(!menuOpen);
             }}
           >
-            {menuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </Button>
 
           {/* 功能菜单下拉列表 - 放在这里确保层级最高 */}
@@ -759,7 +759,7 @@ export default function Home() {
                 setBackgroundExpanded(!backgroundExpanded);
               }}
             >
-              <Lightbulb className="w-6 h-6 text-amber-500" />
+              <Lightbulb className="w-5 h-5 text-cyan-500" />
             </Button>
             {/* 背景灯展开面板 - 向左 */}
             {backgroundExpanded && (
@@ -799,7 +799,7 @@ export default function Home() {
               variant="ghost"
               size="icon"
               className={`w-12 h-12 backdrop-blur-sm rounded-2xl shadow-lg border transition-all ${feedingMode
-                ? 'bg-cyan-100 dark:bg-cyan-900/50 border-cyan-400 dark:border-cyan-600'
+                ? 'bg-yellow-100 dark:bg-yellow-900/50 border-yellow-400 dark:border-yellow-600'
                 : 'bg-white/90 dark:bg-slate-800/90 border-slate-200/50 dark:border-slate-700/50 hover:bg-white dark:hover:bg-slate-800'
                 }`}
               onClick={() => {
@@ -815,7 +815,7 @@ export default function Home() {
                 }
               }}
             >
-              <Cookie className={`w-6 h-6 ${feedingMode ? 'text-cyan-600 dark:text-cyan-400' : 'text-green-500'}`} />
+              <Pizza className={`w-5 h-5 ${feedingMode ? 'text-amber-600 dark:text-amber-400' : 'text-amber-500'}`} />
             </Button>
             {/* 喂食模式提示 */}
             {feedingMode && (
@@ -837,7 +837,7 @@ export default function Home() {
               setIsDrawing(true);
             }}
           >
-            <Palette className="w-6 h-6 text-purple-500" />
+            <Palette className="w-5 h-5 text-purple-500" />
           </Button>
         </div>
       </div>
