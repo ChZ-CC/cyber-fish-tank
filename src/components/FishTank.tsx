@@ -1,32 +1,11 @@
 'use client';
 
 import { forwardRef, useEffect, useState, Dispatch, SetStateAction, useRef } from 'react';
-
-interface Fish {
-  id: string;
-  x: number;
-  y: number;
-  size: number;
-  imageId: string;
-  baseSpeedX: number;
-  baseSpeedY: number;
-  speedMultiplier: number;
-  name: string;
-}
-
-interface Food {
-  id: string;
-  x: number;
-  y: number;
-  eaten: boolean;
-  foodType: string;
-  createdAt: number;
-  startY?: number;
-}
+import { MyFish, Food } from '@/lib/types';
 
 interface FishTankProps {
-  fishes: Fish[];
-  setFishes: Dispatch<SetStateAction<Fish[]>>;
+  fishes: MyFish[];
+  setFishes: Dispatch<SetStateAction<MyFish[]>>;
   foods: Food[];
   setFoods: Dispatch<SetStateAction<Food[]>>;
   backgroundColor: string;
@@ -39,7 +18,17 @@ interface FishTankProps {
 }
 
 const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
-  ({ fishes, setFishes, foods, setFoods, backgroundColor, onFishClick, imageCache, getFishImage, onRenderedFishCountChange, feedingMode, onTankClick }, ref) => {
+  ({
+    fishes, setFishes,
+    foods, setFoods,
+    backgroundColor,
+    onFishClick, 
+    imageCache,
+    getFishImage, 
+    onRenderedFishCountChange,
+    feedingMode,
+    onTankClick,
+  }, ref) => {
     const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
     const [fishImages, setFishImages] = useState<Map<string, string>>(new Map());
     const containerRef = (ref as React.RefObject<HTMLDivElement>) || null;
@@ -51,37 +40,38 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
 
     // 计算真实渲染的鱼数量
     const renderedFishCount = fishes.filter(fish => fishImages.has(fish.id)).length;
-    
+
     // 当渲染数量变化时通知父组件
     useEffect(() => {
       onRenderedFishCountChange?.(renderedFishCount);
     }, [renderedFishCount, onRenderedFishCountChange]);
-    
+
     // 标记是否是首次加载
     const isFirstLoadRef = useRef(true);
-    
+    const foodEaterMapRef = useRef<Map<string, string>>(new Map());
+
     // 当初次获取到容器尺寸时，重新调整鱼的位置
     useEffect(() => {
       if (containerSize.width > 0 && containerSize.height > 0 && isFirstLoadRef.current && fishes.length > 0) {
         // 检查是否有鱼使用了默认尺寸 (800x600)
-        const needsReposition = fishes.some(fish => 
+        const needsReposition = fishes.some(fish =>
           fish.x >= 600 || fish.y >= 400 // 如果位置接近或超过默认尺寸，可能需要重新调整
         );
-        
+
         if (needsReposition) {
           console.log('重新调整鱼的位置以适应容器尺寸');
           setFishes(prevFishes => prevFishes.map(fish => {
             // 检查当前位置是否超出容器
             const newX = Math.min(fish.x, containerSize.width - fish.size);
             const newY = Math.min(fish.y, containerSize.height - fish.size);
-            
+
             if (newX !== fish.x || newY !== fish.y) {
               return { ...fish, x: newX, y: newY };
             }
             return fish;
           }));
         }
-        
+
         isFirstLoadRef.current = false;
       }
     }, [containerSize, fishes, setFishes]);
@@ -118,7 +108,7 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
       } else {
         setFishImages(new Map());
       }
-    }, [fishes, imageCache, getFishImage]);
+    }, [fishes, getFishImage]);
 
     // 使用 requestAnimationFrame 进行动画
     useEffect(() => {
@@ -137,6 +127,12 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
         lastTime = currentTime - (deltaTime % frameInterval);
 
         const now = Date.now();
+        const diagonalLength = Math.sqrt(
+          Math.pow(containerSize.width, 2) + Math.pow(containerSize.height, 2)
+        );
+        const attractionThreshold = diagonalLength / 2;
+
+        foodEaterMapRef.current.clear();
 
         setFishes(prevFishes => {
           return prevFishes.map(fish => {
@@ -144,26 +140,44 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
             let newY = fish.y;
             let newBaseSpeedX = fish.baseSpeedX;
             let newBaseSpeedY = fish.baseSpeedY;
+            let newSize = fish.size;
 
-            const currentFoods = foodsRef.current;
-            if (currentFoods.length > 0) {
-              const nearestFood = currentFoods.reduce((nearest, food) => {
+            // 每次循环都重新获取最新的未吃食物列表
+            const activeFoods = foodsRef.current.filter(food => !food.eaten && !foodEaterMapRef.current.has(food.id));
+            if (activeFoods.length > 0) {
+              // 计算鱼中心位置
+              const fishCenterX = fish.x + fish.size / 2;
+              const fishCenterY = fish.y + fish.size * 0.3;
+
+              const nearestFood = activeFoods.reduce((nearest, food) => {
                 const distToCurrent = Math.sqrt(
-                  Math.pow(food.x - fish.x, 2) +
-                  Math.pow(food.y - fish.y, 2)
+                  Math.pow(food.x - fishCenterX, 2) +
+                  Math.pow(food.y - fishCenterY, 2)
                 );
                 const distToNearest = Math.sqrt(
-                  Math.pow(nearest.x - fish.x, 2) +
-                  Math.pow(nearest.y - fish.y, 2)
+                  Math.pow(nearest.x - fishCenterX, 2) +
+                  Math.pow(nearest.y - fishCenterY, 2)
                 );
                 return distToCurrent < distToNearest ? food : nearest;
-              }, currentFoods[0]);
+              }, activeFoods[0]);
 
-              const dx = nearestFood.x - fish.x;
-              const dy = nearestFood.y - fish.y;
+              const dx = nearestFood.x - fishCenterX;
+              const dy = nearestFood.y - fishCenterY;
               const dist = Math.sqrt(dx * dx + dy * dy);
 
-              if (dist > 0) {
+              // 碰撞检测阈值：鱼尺寸的40%
+              const eatThreshold = fish.size * 0.4;
+              if (dist <= eatThreshold) {
+                if (!foodEaterMapRef.current.has(nearestFood.id)) {
+                  foodEaterMapRef.current.set(nearestFood.id, fish.id);
+                  newSize = Math.min(fish.size + 5, 150);
+                  // 标记食物为已吃
+                  foodsRef.current = foodsRef.current.map(food =>
+                    food.id === nearestFood.id ? { ...food, eaten: true } : food
+                  );
+                  console.info('鱼吃了食物, 鱼=', fish.name, '旧尺寸=', fish.size, '新尺寸=', newSize);
+                }
+              } else if (dist <= attractionThreshold) {
                 const attractionSpeed = 4;
                 newX = fish.x + (dx / dist) * attractionSpeed;
                 newY = fish.y + (dy / dist) * attractionSpeed;
@@ -182,13 +196,13 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
               newY = fish.y + actualSpeedY;
             }
 
-            if (newX <= 0 || newX + fish.size >= containerSize.width) {
+            if (newX <= 0 || newX + newSize >= containerSize.width) {
               newBaseSpeedX = -newBaseSpeedX;
-              newX = Math.max(0, Math.min(newX, containerSize.width - fish.size));
+              newX = Math.max(0, Math.min(newX, containerSize.width - newSize));
             }
-            if (newY <= 0 || newY + fish.size >= containerSize.height) {
+            if (newY <= 0 || newY + newSize >= containerSize.height) {
               newBaseSpeedY = -newBaseSpeedY;
-              newY = Math.max(0, Math.min(newY, containerSize.height - fish.size));
+              newY = Math.max(0, Math.min(newY, containerSize.height - newSize));
             }
 
             return {
@@ -197,12 +211,13 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
               y: newY,
               baseSpeedX: newBaseSpeedX,
               baseSpeedY: newBaseSpeedY,
+              size: newSize,
             };
           });
         });
-
+        // 一次性更新食物状态，过滤掉已吃的和过期的
         setFoods(prevFoods =>
-          prevFoods.filter(food => now - food.createdAt < 5000 && !food.eaten)
+          foodsRef.current.filter(food => now - food.createdAt < 5000 && !food.eaten)
         );
       };
 
@@ -211,17 +226,17 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
       return () => {
         cancelAnimationFrame(animationFrameId);
       };
-    }, [containerSize, setFishes, setFoods]);
+    }, [containerSize]);
 
     const handleTankClick = (e: React.MouseEvent<HTMLDivElement>) => {
       if (!feedingMode || !onTankClick || !containerRef?.current) return;
-      
+
       e.stopPropagation();
-      
+
       const rect = containerRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
-      
+
       onTankClick(x, y);
     };
 
@@ -259,7 +274,7 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
             '虾米': '#FFE66D',
           };
           const foodColor = foodColors[food.foodType] || '#FF6B6B';
-          
+
           // 计算食料存在的时间（毫秒）
           const age = Date.now() - food.createdAt;
           // 食料5秒内从顶部极其缓慢地下沉
@@ -291,9 +306,9 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
         {fishes.map((fish) => {
           const actualSpeedX = fish.baseSpeedX * fish.speedMultiplier;
           const image = fishImages.get(fish.id);
-          
+
           if (!image) return null;
-          
+
           return (
             <div
               key={fish.id}

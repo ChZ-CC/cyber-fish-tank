@@ -44,26 +44,11 @@ function debounce<T extends (...args: any[]) => void>(fn: T, delay: number): T {
   }) as T;
 }
 
-// 鱼的持久化数据结构（不包含位置和速度等动画数据）
-interface FishPersistData {
-  id: string;
-  imageId: string;
-  size: number;
-  baseSpeedX: number;
-  baseSpeedY: number;
-  speedMultiplier: number;
-  name: string;
-}
-
-// 鱼的运行时数据结构（包含动画状态）
-interface Fish extends FishPersistData {
-  x: number;
-  y: number;
-}
+import { MyFish, FishPersistData, Food } from '@/lib/types';
 
 export default function Home() {
-  const [fishes, setFishes] = useState<Fish[]>([]);
-  const [foods, setFoods] = useState<Array<{ id: string; x: number; y: number; startY?: number; eaten: boolean; foodType: string; createdAt: number }>>([]);
+  const [fishes, setFishes] = useState<MyFish[]>([]);
+  const [foods, setFoods] = useState<Food[]>([]);
   const [backgroundColor, setBackgroundColor] = useState('linear-gradient(180deg, #E0F0FF 0%, #B8E0F5 100%)');
   const [isDrawing, setIsDrawing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -150,13 +135,14 @@ export default function Home() {
 
         console.log('localStorage 数据:', {
           hasFishes: !!savedFishes,
-          hasBackground: !!savedBackgroundColor
+          hasBackground: !!savedBackgroundColor,
+          savedFishes: savedFishes ? JSON.parse(savedFishes) : null,
         });
 
         if (savedFishes) {
           const parsedFishes = JSON.parse(savedFishes);
           console.log('解析的鱼数据:', parsedFishes.length, '条');
-          const migratedFishes: Fish[] = [];
+          const migratedFishes: MyFish[] = [];
 
           for (const fish of parsedFishes.map(migrateFishData)) {
             if ((fish as any).image && !fish.imageId) {
@@ -204,7 +190,7 @@ export default function Home() {
 
   // 防抖保存鱼数据
   const saveFishesToStorage = useCallback(
-    debounce((fishes: Fish[]) => {
+    debounce((fishes: MyFish[]) => {
       const persistData: FishPersistData[] = fishes.map(f => ({
         id: f.id,
         imageId: f.imageId,
@@ -220,7 +206,7 @@ export default function Home() {
   );
 
   // 立即保存鱼数据
-  const saveFishesImmediately = useCallback((fishes: Fish[]) => {
+  const saveFishesImmediately = useCallback((fishes: MyFish[]) => {
     const persistData: FishPersistData[] = fishes.map(f => ({
       id: f.id,
       imageId: f.imageId,
@@ -278,7 +264,7 @@ export default function Home() {
   };
 
   // 添加新鱼
-  const handleAddFish = async (image: string): Promise<Fish> => {
+  const handleAddFish = async (image: string): Promise<MyFish> => {
     const size = 60;
     const container = fishTankRef.current;
     const rect = container?.getBoundingClientRect();
@@ -304,7 +290,7 @@ export default function Home() {
       return `${baseName}_${counter}`;
     };
 
-    const newFish: Fish = {
+    const newFish: MyFish = {
       id,
       x,
       y,
@@ -332,7 +318,7 @@ export default function Home() {
     const size = 60;
 
     const existingNames = new Set(fishes.map(f => f.name));
-    const newFishes: Fish[] = [];
+    const newFishes: MyFish[] = [];
     const skippedNames: string[] = [];
     const baseTime = Date.now();
     let globalFishIndex = 0;
@@ -365,7 +351,7 @@ export default function Home() {
               await saveImage(imageId, imageData);
               imageCache.set(imageId, imageData);
 
-              const newFish: Fish = {
+              const newFish: MyFish = {
                 id,
                 x: Math.random() * ((rect?.width || 800) - size),
                 y: Math.random() * ((rect?.height || 600) - size),
@@ -405,7 +391,7 @@ export default function Home() {
         await saveImage(imageId, imageData);
         imageCache.set(imageId, imageData);
 
-        const newFish: Fish = {
+        const newFish: MyFish = {
           id,
           x: Math.random() * ((rect?.width || 800) - size),
           y: Math.random() * ((rect?.height || 600) - size),
@@ -527,16 +513,70 @@ export default function Home() {
   // 获取选中的鱼
   const selectedFish = fishes.find(f => f.id === selectedFishId);
 
-  const updateFish = () => {
+  // 编辑鱼信息 更新数据
+  const updateFish = useCallback(async () => {
     if (selectedFish && editingFishData) {
-      setFishes(prev => prev.map(f =>
+      const updatedFishes = fishes.map(f =>
         f.id === selectedFishId
           ? { ...f, name: editingFishData.name, size: editingFishData.size, speedMultiplier: editingFishData.speedMultiplier }
           : f
-      ));
+      );
+      setFishes(updatedFishes);
+      saveFishesImmediately(updatedFishes);
     }
     setIsEditingFishName(false);
-  };
+    setEditingFishData(null);
+    setFishEditDialogOpen(false);
+  }, [fishes, selectedFishId, editingFishData, saveFishesImmediately]);
+
+  // 更新一条鱼的信息
+  const updateOneFish = useCallback(async (fish: MyFish) => {
+    if (fish) {
+      const updatedFishes = fishes.map(f =>
+        f.id === fish.id
+          ? { ...f, name: fish.name, size: fish.size, speedMultiplier: fish.speedMultiplier }
+          : f
+      );
+      setFishes(updatedFishes);
+      saveFishesImmediately(updatedFishes);
+    }
+    setIsEditingFishName(false);
+    setEditingFishData(null);
+    setFishEditDialogOpen(false);
+  }, [fishes]);
+
+  // 删除鱼
+  const deleteFish = useCallback(async (fishId: string) => {
+    const fish = fishes.find(f => f.id === fishId);
+    if (!fish) return;
+    
+    await deleteImage(fish.imageId);
+    imageCache.delete(fish.imageId);
+    
+    const updatedFishes = fishes.filter(f => f.id !== fishId);
+    setFishes(updatedFishes);
+    saveFishesImmediately(updatedFishes);
+
+    setSelectedFishId(null);
+    setEditingFishData(null);
+    setFishEditDialogOpen(false);
+  }, [fishes, imageCache]);
+
+  // 重新绘制鱼
+  const redrawFish = useCallback(async (fishId: string) => {
+    const fish = fishes.find(f => f.id === fishId);
+    if (!fish) return;
+
+    const image = await getFishImage(fish.imageId);
+    if (image) {
+      setRedrawingImage(image);
+      setRedrawingFishId(fish.id);
+      setIsEditingFishName(false);
+      setEditingFishData(null);
+      setFishEditDialogOpen(false);
+      setIsDrawing(true);
+    }
+  }, [fishes, getFishImage]);
 
   // 点击外部关闭菜单
   useEffect(() => {
@@ -948,14 +988,7 @@ export default function Home() {
                     variant="destructive"
                     size="sm"
                     className="gap-2"
-                    onClick={async () => {
-                      await deleteImage(selectedFish.imageId);
-                      imageCache.delete(selectedFish.imageId);
-                      setFishes(prev => prev.filter(f => f.id !== selectedFish.id));
-                      setSelectedFishId(null);
-                      setEditingFishData(null);
-                      setFishEditDialogOpen(false);
-                    }}
+                    onClick={() => deleteFish(selectedFish.id)}
                   >
                     <Trash2 className="w-4 h-4" />
                     删除鱼
@@ -964,31 +997,14 @@ export default function Home() {
                     variant="outline"
                     size="sm"
                     className="gap-2"
-                    onClick={() => {
-                      const image = getFishImage(selectedFish.imageId);
-                      image.then(img => {
-                        if (img) {
-                          setRedrawingImage(img);
-                          setRedrawingFishId(selectedFish.id);
-                          setIsEditingFishName(false);
-                          setEditingFishData(null);
-                          setFishEditDialogOpen(false);
-                          setIsDrawing(true);
-                        }
-                      });
-                    }}
+                    onClick={() => redrawFish(selectedFish.id)}
                   >
                     <Palette className="w-4 h-4" />
                     重新绘制
                   </Button>
                   <Button
                     className="flex-1 bg-black hover:bg-slate-800 text-white"
-                    onClick={() => {
-                      updateFish();
-                      setIsEditingFishName(false);
-                      setEditingFishData(null);
-                      setFishEditDialogOpen(false);
-                    }}
+                    onClick={() => updateFish()}
                   >
                     确定
                   </Button>
