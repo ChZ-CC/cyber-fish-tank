@@ -1,42 +1,97 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
-import { Lightbulb, Fish, Plus, Palette, Type, Menu, X, Archive, Trash2, ZoomIn, ZoomOut, Sparkles, Download } from 'lucide-react';
+import {
+  Lightbulb,
+  Fish,
+  Plus,
+  Palette,
+  Menu,
+  X,
+  Trash2,
+  Sparkles,
+  Download,
+  Upload,
+  Cookie,
+  LucideEdit
+} from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import FishTank from '@/components/FishTank';
-import DrawingBoard from '@/components/DrawingBoard';
-import ImageGenerator from '@/components/ImageGenerator';
+import FishImage from '@/components/FishImage';
+import { initDB, saveImage, getImage, getImages, deleteImage, clearAllImages } from '@/lib/imageStore';
+
+// 动态导入 DrawingBoard 和 ImageGenerator 组件
+const DrawingBoard = dynamic(() => import('@/components/DrawingBoard'), { ssr: false });
+const ImageGenerator = dynamic(() => import('@/components/ImageGenerator'), { ssr: false });
+
+// 图片缓存（内存中的快速访问）
+const imageCache = new Map<string, string>();
+
+// 防抖函数
+function debounce<T extends (...args: any[]) => void>(fn: T, delay: number): T {
+  let timeoutId: NodeJS.Timeout | null = null;
+  return ((...args: any[]) => {
+    if (timeoutId) clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn(...args), delay);
+  }) as T;
+}
+
+// 鱼的持久化数据结构（不包含位置和速度等动画数据）
+interface FishPersistData {
+  id: string;
+  imageId: string;
+  size: number;
+  baseSpeedX: number;
+  baseSpeedY: number;
+  speedMultiplier: number;
+  name: string;
+}
+
+// 鱼的运行时数据结构（包含动画状态）
+interface Fish extends FishPersistData {
+  x: number;
+  y: number;
+}
 
 export default function Home() {
-  const [fishes, setFishes] = useState<Array<{ id: string; x: number; y: number; size: number; image: string; baseSpeedX: number; baseSpeedY: number; speedMultiplier: number; name: string }>>([]);
-  const [foods, setFoods] = useState<Array<{ id: string; x: number; y: number; eaten: boolean; foodType: string; createdAt: number }>>([]);
-  const [stagingFishes, setStagingFishes] = useState<Array<{ id: string; size: number; image: string; baseSpeedX: number; baseSpeedY: number; speedMultiplier: number; name: string }>>([]);
+  const [fishes, setFishes] = useState<Fish[]>([]);
+  const [foods, setFoods] = useState<Array<{ id: string; x: number; y: number; startY?: number; eaten: boolean; foodType: string; createdAt: number }>>([]);
   const [backgroundColor, setBackgroundColor] = useState('linear-gradient(180deg, #E0F0FF 0%, #B8E0F5 100%)');
-  const [selectedFood, setSelectedFood] = useState<string | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [backgroundExpanded, setBackgroundExpanded] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [stagingExpanded, setStagingExpanded] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [selectedFishId, setSelectedFishId] = useState<string | null>(null);
   const [fishEditDialogOpen, setFishEditDialogOpen] = useState(false);
-  const [aiServiceEnabled, setAiServiceEnabled] = useState(false);
+  const [aiServiceEnabled] = useState(false);
   const [redrawingFishId, setRedrawingFishId] = useState<string | null>(null);
-  const [editingFishName, setEditingFishName] = useState(false);
+  const [redrawingImage, setRedrawingImage] = useState<string | null>(null);
+  const [isEditingFishName, setIsEditingFishName] = useState(false);
+  const [editingFishData, setEditingFishData] = useState<{ name: string; size: number; speedMultiplier: number } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [renderedFishCount, setRenderedFishCount] = useState(0);
+  const [hoveredColor, setHoveredColor] = useState<string | null>(null);
+  const [feedingMode, setFeedingMode] = useState(false);
+  const [selectedFoodType, setSelectedFoodType] = useState<string>('鱼食');
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const fishTankRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const backgroundColors = [
     { name: '海洋蓝', value: 'linear-gradient(180deg, #E0F0FF 0%, #B8E0F5 100%)', color: '#B8E0F5' },
     { name: '深海蓝', value: 'linear-gradient(135deg, #051937 0%, #0A2463 100%)', color: '#0A2463' },
-    { name: '珊瑚橙', value: '#4a2a1a', color: '#4a2a1a' },
-    { name: '海草绿', value: '#1a4a2a', color: '#1a4a2a' },
-    { name: '沙滩黄', value: '#4a3a1a', color: '#4a3a1a' },
+    { name: '珊瑚橙', value: 'linear-gradient(180deg, #483024ff 0%, #4a2a1a 100%)', color: '#4a2a1a' },
+    { name: '海草绿', value: 'linear-gradient(180deg, #274a33ff 0%, #1a4a2a 100%)', color: '#1a4a2a' },
+    { name: '沙滩黄', value: 'linear-gradient(180deg, #4f432cff 0%, #4a3a1a 100%)', color: '#4a3a1a' },
   ];
 
   const foodTypes = [
@@ -45,175 +100,285 @@ export default function Home() {
     { name: '虾米', color: '#FFE66D' },
   ];
 
-  // 数据迁移函数：将旧数据结构转换为新数据结构
-  const migrateFishData = (fish: any) => {
-    // 检查是否是新数据结构（有 speedMultiplier 和 name 属性）
-    if ('speedMultiplier' in fish && 'name' in fish) {
-      // 确保所有必需的属性都有有效的值
+  // 获取鱼的图片（带缓存）
+  const getFishImage = useCallback(async (imageId: string): Promise<string | null> => {
+    if (imageCache.has(imageId)) {
+      return imageCache.get(imageId)!;
+    }
+    const image = await getImage(imageId);
+    if (image) {
+      imageCache.set(imageId, image);
+    }
+    return image;
+  }, []);
+
+  // 数据迁移函数
+  const migrateFishData = (fish: any): FishPersistData & { x?: number; y?: number; image?: string } => {
+    if ('imageId' in fish) {
       return {
         ...fish,
         baseSpeedX: typeof fish.baseSpeedX === 'number' ? fish.baseSpeedX : (Math.random() - 0.5) * 4,
         baseSpeedY: typeof fish.baseSpeedY === 'number' ? fish.baseSpeedY : (Math.random() - 0.5) * 2,
         speedMultiplier: typeof fish.speedMultiplier === 'number' ? fish.speedMultiplier : 1,
         name: typeof fish.name === 'string' ? fish.name : '',
-        x: typeof fish.x === 'number' && !isNaN(fish.x) ? fish.x : 0,
-        y: typeof fish.y === 'number' && !isNaN(fish.y) ? fish.y : 0,
       };
     }
-
-    // 旧数据结构，需要迁移
     return {
-      ...fish,
-      baseSpeedX: fish.speedX || (Math.random() - 0.5) * 4,
-      baseSpeedY: fish.speedY || (Math.random() - 0.5) * 2,
-      speedMultiplier: 1,
+      id: fish.id,
+      imageId: '',
+      image: fish.image,
+      size: fish.size || 60,
+      baseSpeedX: fish.baseSpeedX || fish.speedX || (Math.random() - 0.5) * 4,
+      baseSpeedY: fish.baseSpeedY || fish.speedY || (Math.random() - 0.5) * 2,
+      speedMultiplier: fish.speedMultiplier || 1,
       name: fish.name || '',
-      x: typeof fish.x === 'number' && !isNaN(fish.x) ? fish.x : 0,
-      y: typeof fish.y === 'number' && !isNaN(fish.y) ? fish.y : 0,
+      x: fish.x,
+      y: fish.y,
     };
   };
 
-  // 持久化存储
+  // 初始化 IndexedDB 并加载数据
   useEffect(() => {
-    const savedFishes = localStorage.getItem('fishtank-fishes');
-    const savedStagingFishes = localStorage.getItem('fishtank-staging');
-    const savedBackgroundColor = localStorage.getItem('fishtank-background');
+    const loadData = async () => {
+      console.log('开始加载数据...');
+      try {
+        await initDB();
+        console.log('IndexedDB 初始化完成');
 
-    if (savedFishes) {
-      try {
-        const parsedFishes = JSON.parse(savedFishes);
-        const migratedFishes = parsedFishes.map(migrateFishData);
-        setFishes(migratedFishes);
+        const savedFishes = localStorage.getItem('fishtank-fishes');
+        const savedBackgroundColor = localStorage.getItem('fishtank-background');
+
+        console.log('localStorage 数据:', {
+          hasFishes: !!savedFishes,
+          hasBackground: !!savedBackgroundColor
+        });
+
+        if (savedFishes) {
+          const parsedFishes = JSON.parse(savedFishes);
+          console.log('解析的鱼数据:', parsedFishes.length, '条');
+          const migratedFishes: Fish[] = [];
+
+          for (const fish of parsedFishes.map(migrateFishData)) {
+            if ((fish as any).image && !fish.imageId) {
+              // 迁移旧数据：将 base64 图片存储到 IndexedDB
+              const imageId = `img-${fish.id}-${Date.now()}`;
+              await saveImage(imageId, (fish as any).image);
+              imageCache.set(imageId, (fish as any).image);
+              fish.imageId = imageId;
+            } else if (fish.imageId) {
+              // 新数据：从 IndexedDB 加载图片到缓存
+              const image = await getImage(fish.imageId);
+              if (image) {
+                imageCache.set(fish.imageId, image);
+              } else {
+                console.warn(`图片 ${fish.imageId} 未在 IndexedDB 中找到`);
+              }
+            }
+
+            const size = fish.size || 60;
+
+            migratedFishes.push({
+              ...fish,
+              x: (fish as any).x ?? Math.random() * (800 - size),
+              y: (fish as any).y ?? Math.random() * (600 - size),
+            });
+          }
+
+          console.log(`加载了 ${migratedFishes.length} 条鱼`);
+          setFishes(migratedFishes);
+        }
+
+        if (savedBackgroundColor) {
+          setBackgroundColor(savedBackgroundColor);
+        }
       } catch (e) {
-        console.error('Failed to load fishes:', e);
+        console.error('Failed to load data:', e);
+      } finally {
+        console.log('数据加载完成，设置 isLoading = false');
+        setIsLoading(false);
       }
-    }
-    if (savedStagingFishes) {
-      try {
-        const parsedStagingFishes = JSON.parse(savedStagingFishes);
-        const migratedStagingFishes = parsedStagingFishes.map(migrateFishData);
-        setStagingFishes(migratedStagingFishes);
-      } catch (e) {
-        console.error('Failed to load staging fishes:', e);
-      }
-    }
-    if (savedBackgroundColor) {
-      setBackgroundColor(savedBackgroundColor);
-    }
+    };
+
+    loadData();
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem('fishtank-fishes', JSON.stringify(fishes));
-  }, [fishes]);
+  // 防抖保存鱼数据
+  const saveFishesToStorage = useCallback(
+    debounce((fishes: Fish[]) => {
+      const persistData: FishPersistData[] = fishes.map(f => ({
+        id: f.id,
+        imageId: f.imageId,
+        size: f.size,
+        baseSpeedX: f.baseSpeedX,
+        baseSpeedY: f.baseSpeedY,
+        speedMultiplier: f.speedMultiplier,
+        name: f.name,
+      }));
+      localStorage.setItem('fishtank-fishes', JSON.stringify(persistData));
+    }, 1000),
+    []
+  );
 
-  useEffect(() => {
-    localStorage.setItem('fishtank-staging', JSON.stringify(stagingFishes));
-  }, [stagingFishes]);
+  // 立即保存鱼数据
+  const saveFishesImmediately = useCallback((fishes: Fish[]) => {
+    const persistData: FishPersistData[] = fishes.map(f => ({
+      id: f.id,
+      imageId: f.imageId,
+      size: f.size,
+      baseSpeedX: f.baseSpeedX,
+      baseSpeedY: f.baseSpeedY,
+      speedMultiplier: f.speedMultiplier,
+      name: f.name,
+    }));
+    localStorage.setItem('fishtank-fishes', JSON.stringify(persistData));
+    console.log(`立即保存了 ${persistData.length} 条鱼到 localStorage`);
+  }, []);
 
+  // 防抖保存暂存区数据
+  // 监听鱼数据变化
   useEffect(() => {
-    localStorage.setItem('fishtank-background', backgroundColor);
-  }, [backgroundColor]);
+    if (!isLoading) {
+      saveFishesToStorage(fishes);
+    }
+  }, [fishes, isLoading, saveFishesToStorage]);
+
+  // 保存背景色
+  useEffect(() => {
+    if (!isLoading) {
+      localStorage.setItem('fishtank-background', backgroundColor);
+    }
+  }, [backgroundColor, isLoading]);
 
   const handleBackgroundChange = (color: string) => {
     setBackgroundColor(color);
   };
 
-  // 修复喂食逻辑 - 撒入3-5颗鱼食
+  // 喂食逻辑（保留用于兼容性）
   const handleAddFood = (foodType: string) => {
     if (!fishTankRef.current) return;
 
     const rect = fishTankRef.current.getBoundingClientRect();
-    const numFood = Math.floor(Math.random() * 3) + 3; // 3-5颗鱼食
+    const numFood = Math.floor(Math.random() * 3) + 3;
 
-    const newFoods = [];
+    const newFoods: Array<{ id: string; x: number; y: number; startY: number; eaten: boolean; foodType: string; createdAt: number }> = [];
     for (let i = 0; i < numFood; i++) {
+      const y = Math.random() * (rect.height - 50) + 25;
       newFoods.push({
         id: `${Date.now()}-${i}`,
         x: Math.random() * (rect.width - 50) + 25,
-        y: Math.random() * (rect.height - 50) + 25,
+        y,
+        startY: y,
         eaten: false,
         foodType,
         createdAt: Date.now()
       });
     }
 
-    setFoods([...foods, ...newFoods]);
+    setFoods(prev => [...prev, ...newFoods]);
   };
 
-  const handleAddFish = (image: string) => {
+  // 添加新鱼
+  const handleAddFish = async (image: string): Promise<Fish> => {
     const size = 60;
     const container = fishTankRef.current;
-    if (!container) return;
+    const rect = container?.getBoundingClientRect();
 
-    const rect = container.getBoundingClientRect();
-    const x = Math.random() * (rect.width - size);
-    const y = Math.random() * (rect.height - size);
+    const x = Math.random() * ((rect?.width || 800) - size);
+    const y = Math.random() * ((rect?.height || 600) - size);
     const baseSpeedX = (Math.random() - 0.5) * 4;
     const baseSpeedY = (Math.random() - 0.5) * 2;
+    const id = Date.now().toString();
+    const imageId = `img-${id}`;
 
-    const newFish = {
-      id: Date.now().toString(),
+    await saveImage(imageId, image);
+    imageCache.set(imageId, image);
+
+    const generateUniqueName = (baseName: string): string => {
+      const existingNames = new Set(fishes.map(f => f.name));
+      if (!existingNames.has(baseName)) return baseName;
+
+      let counter = 1;
+      while (existingNames.has(`${baseName}_${counter}`)) {
+        counter++;
+      }
+      return `${baseName}_${counter}`;
+    };
+
+    const newFish: Fish = {
+      id,
       x,
       y,
       size,
-      image,
+      imageId,
       baseSpeedX,
       baseSpeedY,
-      speedMultiplier: 1, // 默认速度倍率为 1
-      name: `${fishes.length + 1}号鱼` // 自动生成名称
+      speedMultiplier: 1,
+      name: generateUniqueName(`${fishes.length + 1}号鱼`)
     };
 
-    setFishes([...fishes, newFish]);
+    const updatedFishes = [...fishes, newFish];
+    setFishes(updatedFishes);
+    saveFishesImmediately(updatedFishes);
     return newFish;
   };
 
-  // 批量导入鱼图片（支持图片和 zip 格式）
+  // 批量导入鱼图片
   const handleImportFishes = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
     const container = fishTankRef.current;
-    if (!container) return;
-
-    const rect = container.getBoundingClientRect();
+    const rect = container?.getBoundingClientRect();
     const size = 60;
 
-    const newFishes: Array<{ id: string; x: number; y: number; size: number; image: string; baseSpeedX: number; baseSpeedY: number; speedMultiplier: number; name: string }> = [];
-    let importedCount = 0;
+    const existingNames = new Set(fishes.map(f => f.name));
+    const newFishes: Fish[] = [];
+    const skippedNames: string[] = [];
+    const baseTime = Date.now();
+    let globalFishIndex = 0;
 
-    const processFile = async (file: File, index: number) => {
-      // 检查是否是 zip 文件
+    const processFile = async (file: File, fileIndex: number) => {
       if (file.type === 'application/zip' || file.name.endsWith('.zip')) {
         try {
           const arrayBuffer = await file.arrayBuffer();
           const zip = await JSZip.loadAsync(arrayBuffer);
-          
-          // 遍历 zip 中的所有文件
+
           for (const [filename, zipEntry] of Object.entries(zip.files)) {
-            // 只处理图片文件
             if (!zipEntry.dir && (filename.match(/\.(jpg|jpeg|png|gif|webp)$/i))) {
+              const fishName = filename.replace(/\.[^/.]+$/, '');
+
+              if (existingNames.has(fishName)) {
+                skippedNames.push(fishName);
+                continue;
+              }
+
               const blob = await zipEntry.async('blob');
-              const reader = new FileReader();
-              await new Promise<void>((resolve) => {
-                reader.onload = (e) => {
-                  const image = e.target?.result as string;
-                  const newFish = {
-                    id: `import-${Date.now()}-${importedCount}`,
-                    x: Math.random() * (rect.width - size),
-                    y: Math.random() * (rect.height - size),
-                    size,
-                    image,
-                    baseSpeedX: (Math.random() - 0.5) * 4,
-                    baseSpeedY: (Math.random() - 0.5) * 2,
-                    speedMultiplier: 1,
-                    name: filename.replace(/\.[^/.]+$/, '') // 使用文件名（不带扩展名）作为鱼名
-                  };
-                  newFishes.push(newFish);
-                  importedCount++;
-                  resolve();
-                };
+              const imageData = await new Promise<string>((resolve) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target?.result as string);
                 reader.readAsDataURL(blob);
               });
+
+              const id = `import-${baseTime}-${globalFishIndex}`;
+              const imageId = `img-${id}`;
+
+              await saveImage(imageId, imageData);
+              imageCache.set(imageId, imageData);
+
+              const newFish: Fish = {
+                id,
+                x: Math.random() * ((rect?.width || 800) - size),
+                y: Math.random() * ((rect?.height || 600) - size),
+                size,
+                imageId,
+                baseSpeedX: (Math.random() - 0.5) * 4,
+                baseSpeedY: (Math.random() - 0.5) * 2,
+                speedMultiplier: 1,
+                name: fishName
+              };
+              newFishes.push(newFish);
+              existingNames.add(fishName);
+              globalFishIndex++;
             }
           }
         } catch (error) {
@@ -221,55 +386,77 @@ export default function Home() {
           alert('解压 zip 文件失败，请检查文件格式');
         }
       } else {
-        // 处理普通图片文件
-        return new Promise<void>((resolve) => {
+        const fishName = file.name.replace(/\.[^/.]+$/, '');
+
+        if (existingNames.has(fishName)) {
+          skippedNames.push(fishName);
+          return;
+        }
+
+        const imageData = await new Promise<string>((resolve) => {
           const reader = new FileReader();
-          reader.onload = (e) => {
-            const image = e.target?.result as string;
-            const newFish = {
-              id: `import-${Date.now()}-${importedCount}`,
-              x: Math.random() * (rect.width - size),
-              y: Math.random() * (rect.height - size),
-              size,
-              image,
-              baseSpeedX: (Math.random() - 0.5) * 4,
-              baseSpeedY: (Math.random() - 0.5) * 2,
-              speedMultiplier: 1,
-              name: file.name.replace(/\.[^/.]+$/, '') // 使用文件名（不带扩展名）作为鱼名
-            };
-            newFishes.push(newFish);
-            importedCount++;
-            resolve();
-          };
+          reader.onload = (e) => resolve(e.target?.result as string);
           reader.readAsDataURL(file);
         });
+
+        const id = `import-${baseTime}-${globalFishIndex}`;
+        const imageId = `img-${id}`;
+
+        await saveImage(imageId, imageData);
+        imageCache.set(imageId, imageData);
+
+        const newFish: Fish = {
+          id,
+          x: Math.random() * ((rect?.width || 800) - size),
+          y: Math.random() * ((rect?.height || 600) - size),
+          size,
+          imageId,
+          baseSpeedX: (Math.random() - 0.5) * 4,
+          baseSpeedY: (Math.random() - 0.5) * 2,
+          speedMultiplier: 1,
+          name: fishName
+        };
+        newFishes.push(newFish);
+        existingNames.add(fishName);
+        globalFishIndex++;
       }
     };
 
-    // 处理所有文件
-    await Promise.all(Array.from(files).map((file, index) => processFile(file, index)));
+    // 串行处理文件以避免竞态条件
+    for (let i = 0; i < files.length; i++) {
+      await processFile(files[i], i);
+    }
 
-    // 添加到鱼缸
     if (newFishes.length > 0) {
-      setFishes([...fishes, ...newFishes]);
-      alert(`成功导入 ${newFishes.length} 条鱼！`);
+      const updatedFishes = [...fishes, ...newFishes];
+      setFishes(updatedFishes);
+      saveFishesImmediately(updatedFishes);
+
+      let message = `成功导入 ${newFishes.length} 条鱼！`;
+      if (skippedNames.length > 0) {
+        message += `\n跳过 ${skippedNames.length} 条重名鱼：${skippedNames.slice(0, 5).join('、')}${skippedNames.length > 5 ? '...' : ''}`;
+      }
+      alert(message);
+    } else if (skippedNames.length > 0) {
+      alert(`所有导入的鱼名称都已存在，共跳过 ${skippedNames.length} 条鱼。`);
     } else {
       alert('未找到有效的图片文件');
     }
+
+    event.target.value = '';
   };
 
-  // 更新鱼的图片（用于重新绘制）
-  const updateFishImage = (fishId: string, newImage: string) => {
-    setFishes(fishes.map(fish =>
-      fish.id === fishId ? { ...fish, image: newImage } : fish
+  // 更新鱼的图片
+  const updateFishImage = async (fishId: string, newImage: string) => {
+    const fish = fishes.find(f => f.id === fishId);
+    if (!fish) return;
+
+    await saveImage(fish.imageId, newImage);
+    imageCache.set(fish.imageId, newImage);
+
+    setFishes(prev => prev.map(f =>
+      f.id === fishId ? { ...f } : f
     ));
-  };
-
-  // 开始重新绘制鱼
-  const handleRedrawFish = (fishId: string) => {
-    setRedrawingFishId(fishId);
-    setIsDrawing(true);
-    setFishEditDialogOpen(false);
   };
 
   // 导出单个鱼
@@ -278,14 +465,16 @@ export default function Home() {
     if (!fish) return;
 
     try {
-      // 将 base64 图片转换为 blob
-      const response = await fetch(fish.image);
+      const image = await getFishImage(fish.imageId);
+      if (!image) {
+        alert('图片不存在');
+        return;
+      }
+
+      const response = await fetch(image);
       const blob = await response.blob();
-      
-      // 使用鱼的名称作为文件名，如果名称为空则使用 ID
+
       const fileName = `${fish.name || fish.id}.png`;
-      
-      // 下载文件
       saveAs(blob, fileName);
     } catch (error) {
       console.error('导出失败:', error);
@@ -302,556 +491,87 @@ export default function Home() {
 
     try {
       const zip = new JSZip();
-      
-      // 添加每条鱼的图片到 ZIP
+
       for (const fish of fishes) {
-        const response = await fetch(fish.image);
-        const blob = await response.blob();
-        
-        // 使用鱼的名称作为文件名，如果名称为空则使用 ID
-        const fileName = `${fish.name || fish.id}.png`;
-        zip.file(fileName, blob);
+        const image = await getFishImage(fish.imageId);
+        if (image) {
+          const response = await fetch(image);
+          const blob = await response.blob();
+          zip.file(`${fish.name || fish.id}.png`, blob);
+        }
       }
-      
-      // 生成 ZIP 文件
+
       const content = await zip.generateAsync({ type: 'blob' });
-      
-      // 下载 ZIP 文件
-      saveAs(content, 'fishes.zip');
+      saveAs(content, `我的鱼缸_${new Date().toLocaleDateString()}.zip`);
     } catch (error) {
       console.error('导出失败:', error);
       alert('导出失败，请重试');
     }
   };
 
-  // 移动鱼到暂存区
-  const moveToStaging = (fishId: string) => {
-    const fish = fishes.find(f => f.id === fishId);
-    if (!fish) return;
-
-    const stagingFish = {
-      id: fish.id,
-      size: fish.size,
-      image: fish.image,
-      baseSpeedX: fish.baseSpeedX,
-      baseSpeedY: fish.baseSpeedY,
-      speedMultiplier: fish.speedMultiplier,
-      name: fish.name
-    };
-
-    setStagingFishes([...stagingFishes, stagingFish]);
-    setFishes(fishes.filter(f => f.id !== fishId));
-    setSelectedFishId(null);
-    setFishEditDialogOpen(false);
-  };
-
-  // 从暂存区添加到鱼缸
-  const moveToTank = (stagingFishId: string) => {
-    const stagingFish = stagingFishes.find(f => f.id === stagingFishId);
-    if (!stagingFish || !fishTankRef.current) return;
-
-    const rect = fishTankRef.current.getBoundingClientRect();
-    const size = stagingFish.size;
-
-    const newFish = {
-      id: stagingFish.id,
-      x: Math.random() * (rect.width - size),
-      y: Math.random() * (rect.height - size),
-      size,
-      image: stagingFish.image,
-      baseSpeedX: stagingFish.baseSpeedX,
-      baseSpeedY: stagingFish.baseSpeedY,
-      speedMultiplier: stagingFish.speedMultiplier,
-      name: stagingFish.name || `${fishes.length + 1}号鱼`
-    };
-
-    setFishes([...fishes, newFish]);
-    setStagingFishes(stagingFishes.filter(f => f.id !== stagingFishId));
-  };
-
   // 点击鱼缸中的鱼
   const handleFishClick = (fishId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const fish = fishes.find(f => f.id === fishId);
+    if (fish) {
+      setEditingFishData({
+        name: fish.name || '',
+        size: fish.size,
+        speedMultiplier: fish.speedMultiplier,
+      });
+    }
     setSelectedFishId(fishId);
     setFishEditDialogOpen(true);
-    setEditingFishName(false);
-  };
-
-  // 更新鱼的属性
-  const updateFishProperties = (fishId: string, properties: Partial<{ size: number; speedMultiplier: number; name: string }>) => {
-    setFishes(fishes.map(fish =>
-      fish.id === fishId ? { ...fish, ...properties } : fish
-    ));
-  };
-
-  // 删除暂存区的鱼
-  const deleteStagingFish = (fishId: string) => {
-    setStagingFishes(stagingFishes.filter(f => f.id !== fishId));
   };
 
   // 获取选中的鱼
   const selectedFish = fishes.find(f => f.id === selectedFishId);
 
+  const updateFish = () => {
+    if (selectedFish && editingFishData) {
+      setFishes(prev => prev.map(f =>
+        f.id === selectedFishId
+          ? { ...f, name: editingFishData.name, size: editingFishData.size, speedMultiplier: editingFishData.speedMultiplier }
+          : f
+      ));
+    }
+    setIsEditingFishName(false);
+  };
+
+  // 点击外部关闭菜单
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+
+      // 如果点击的是菜单，处理菜单关闭
+      if (menuRef.current && !menuRef.current.contains(target)) {
+        setMenuOpen(false);
+        setBackgroundExpanded(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // 如果正在加载，显示加载界面
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen w-full bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-900 dark:to-slate-800">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-slate-600 dark:text-slate-400">正在加载...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col md:flex-row h-screen w-full overflow-hidden bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-900 dark:to-slate-800">
-      {/* 移动端顶部栏 */}
-      <div className="md:hidden flex items-center justify-between p-4 bg-white dark:bg-slate-800 shadow-lg">
-        <h1 className="text-lg font-bold flex items-center gap-2">
-          <Fish className="text-blue-500" />
-          赛博养鱼
-        </h1>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 opacity-50" title="AI 服务已禁用">
-            <Sparkles className="h-4 w-4 text-purple-500" />
-            <Switch
-              checked={aiServiceEnabled}
-              disabled
-              className="data-[state=checked]:bg-purple-600"
-            />
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-          >
-            {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </Button>
-        </div>
-      </div>
-
-      {/* 移动端侧边栏（底部抽屉） */}
-      <div className={`md:hidden fixed inset-0 z-50 bg-black/50 transition-opacity ${sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-        <div className={`absolute bottom-0 left-0 right-0 bg-white dark:bg-slate-800 rounded-t-3xl shadow-2xl transition-transform duration-300 ${sidebarOpen ? 'translate-y-0' : 'translate-y-full'}`}>
-          <div className="p-4 border-b border-slate-200 dark:border-slate-700">
-            <div className="w-12 h-1 bg-slate-300 dark:bg-slate-600 rounded-full mx-auto mb-4" />
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold flex items-center gap-2">
-                <Fish className="text-blue-500" />
-                功能菜单
-              </h2>
-              <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
-                <X className="h-5 w-5" />
-              </Button>
-            </div>
-          </div>
-          <div className="p-4 space-y-4 max-h-[60vh] overflow-y-auto">
-            {/* 背景灯 */}
-            <div className="space-y-2">
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => setBackgroundExpanded(!backgroundExpanded)}
-              >
-                <Lightbulb className="mr-2 h-4 w-4" />
-                背景灯
-                <span className="ml-auto">{backgroundExpanded ? '▼' : '▶'}</span>
-              </Button>
-              {backgroundExpanded && (
-                <div className="pl-6 space-y-2">
-                  {backgroundColors.map((color) => {
-                    const isGradient = color.value.includes('gradient');
-                    return (
-                      <button
-                        key={color.value}
-                        onClick={() => handleBackgroundChange(color.value)}
-                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2 transition-colors"
-                        style={isGradient ? { background: backgroundColor === color.value ? `${color.value}22` : 'transparent' } : { backgroundColor: backgroundColor === color.value ? `${color.value}22` : 'transparent' }}
-                      >
-                        <div
-                          className="w-6 h-6 rounded-full border-2 border-slate-300 dark:border-slate-600"
-                          style={{ background: color.value }}
-                        />
-                        <span className="text-sm">{color.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* 喂食 */}
-            <div className="space-y-2">
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => setSelectedFood(selectedFood ? null : '鱼食')}
-              >
-                <Type className="mr-2 h-4 w-4" />
-                喂食
-                <span className="ml-auto">{selectedFood ? '✕' : '▶'}</span>
-              </Button>
-              {selectedFood && (
-                <div className="pl-6 space-y-2">
-                  {foodTypes.map((food) => (
-                    <button
-                      key={food.name}
-                      onClick={() => handleAddFood(food.name)}
-                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2 transition-colors"
-                    >
-                      <div
-                        className="w-6 h-6 rounded-full border-2 border-slate-300 dark:border-slate-600"
-                        style={{ backgroundColor: food.color }}
-                      />
-                      <span className="text-sm">{food.name}</span>
-                    </button>
-                  ))}
-                  <p className="text-xs text-slate-500 dark:text-slate-400 pl-2">点击食料撒入3-5颗鱼食</p>
-                </div>
-              )}
-            </div>
-
-            {/* 暂存区 */}
-            <div className="space-y-2">
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => setStagingExpanded(!stagingExpanded)}
-              >
-                <Archive className="mr-2 h-4 w-4" />
-                暂存区
-                <span className="ml-auto text-xs bg-slate-200 dark:bg-slate-600 px-2 py-1 rounded-full">{stagingFishes.length}</span>
-              </Button>
-              {stagingExpanded && (
-                <div className="pl-6 space-y-2">
-                  {stagingFishes.length === 0 ? (
-                    <p className="text-xs text-slate-500 dark:text-slate-400 pl-2">暂存区为空</p>
-                  ) : (
-                    stagingFishes.map((fish) => (
-                      <div key={fish.id} className="flex items-center gap-2">
-                        <img
-                          src={fish.image}
-                          alt={fish.name || '鱼'}
-                          className="w-10 h-10 object-contain"
-                        />
-                        <div className="flex-1">
-                          <button
-                            onClick={() => moveToTank(fish.id)}
-                            className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-                          >
-                            {fish.name || '未命名鱼'}
-                          </button>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => deleteStagingFish(fish.id)}
-                        >
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* 添加鱼 */}
-            <div className="space-y-2">
-              <Dialog open={isDrawing} onOpenChange={setIsDrawing}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" className="w-full">
-                    <Palette className="mr-2 h-4 w-4" />
-                    画一条鱼
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0" closeOnOutsideClick={false}>
-                  <DialogHeader className="sr-only">
-                    <DialogTitle>画一条鱼</DialogTitle>
-                  </DialogHeader>
-                  <DrawingBoard 
-                    onFishCreated={handleAddFish} 
-                    onFishUpdated={redrawingFishId ? (image) => updateFishImage(redrawingFishId, image) : undefined}
-                    onClose={() => {
-                      setIsDrawing(false);
-                      setRedrawingFishId(null);
-                    }} 
-                    aiServiceEnabled={aiServiceEnabled}
-                    initialImage={redrawingFishId ? fishes.find(f => f.id === redrawingFishId)?.image : undefined}
-                  />
-                </DialogContent>
-              </Dialog>
-
-              <Dialog open={isGenerating} onOpenChange={setIsGenerating}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" className="w-full">
-                    <Plus className="mr-2 h-4 w-4" />
-                    文生图
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-0" closeOnOutsideClick={false}>
-                  <DialogHeader className="sr-only">
-                    <DialogTitle>文生图生成鱼</DialogTitle>
-                  </DialogHeader>
-                  <ImageGenerator onFishCreated={handleAddFish} onClose={() => setIsGenerating(false)} aiServiceEnabled={aiServiceEnabled} />
-                </DialogContent>
-              </Dialog>
-            </div>
-
-            {/* 导入导出 */}
-            <div className="space-y-2">
-              <input
-                type="file"
-                id="fish-import-mobile"
-                multiple
-                accept="image/*,.zip"
-                className="hidden"
-                onChange={handleImportFishes}
-              />
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => document.getElementById('fish-import-mobile')?.click()}
-              >
-                <Download className="mr-2 h-4 w-4 text-blue-500" />
-                批量导入（支持ZIP）
-              </Button>
-              {fishes.length > 0 && (
-                <Button 
-                  variant="outline" 
-                  className="w-full justify-start"
-                  onClick={exportAllFishes}
-                >
-                  <Download className="mr-2 h-4 w-4 text-green-500" />
-                  导出所有鱼（ZIP）
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 桌面端侧边栏 */}
-      <div className="hidden md:flex w-72 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex-col shadow-xl">
-        <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-          <h1 className="text-2xl font-bold flex items-center gap-3">
-            <Fish className="text-blue-500" />
-            赛博养鱼
-          </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            打造你的专属鱼缸
-          </p>
-          <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-purple-500" />
-              <span className="text-sm font-medium">AI 服务</span>
-            </div>
-            <div className="flex items-center gap-2 opacity-50" title="AI 服务已禁用">
-              <Switch
-                checked={aiServiceEnabled}
-                disabled
-                className="data-[state=checked]:bg-purple-600"
-              />
-            </div>
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {/* 背景灯 */}
-          <div className="space-y-2">
-            <Button
-              variant="outline"
-              className="w-full justify-start h-11"
-              onClick={() => setBackgroundExpanded(!backgroundExpanded)}
-            >
-              <Lightbulb className="mr-2 h-4 w-4 text-amber-500" />
-              背景灯
-              <span className="ml-auto text-slate-400">{backgroundExpanded ? '▼' : '▶'}</span>
-            </Button>
-            {backgroundExpanded && (
-              <div className="pl-6 space-y-2">
-                {backgroundColors.map((color) => {
-                  const isGradient = color.value.includes('gradient');
-                  return (
-                    <button
-                      key={color.value}
-                      onClick={() => handleBackgroundChange(color.value)}
-                      className="w-full text-left px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-3 transition-all duration-200 hover:scale-[1.02]"
-                      style={{
-                        ...isGradient 
-                          ? { background: backgroundColor === color.value ? `${color.value}22` : 'transparent' } 
-                          : { backgroundColor: backgroundColor === color.value ? `${color.value}22` : 'transparent' },
-                        border: backgroundColor === color.value ? `2px solid ${color.color}` : '2px solid transparent'
-                      }}
-                    >
-                      <div
-                        className="w-8 h-8 rounded-full border-2 border-slate-300 dark:border-slate-600 shadow-sm"
-                        style={{ background: color.value }}
-                      />
-                      <span className="text-sm font-medium">{color.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* 喂食 */}
-          <div className="space-y-2">
-            <Button
-              variant="outline"
-              className="w-full justify-start h-11"
-              onClick={() => setSelectedFood(selectedFood ? null : '鱼食')}
-            >
-              <Type className="mr-2 h-4 w-4 text-cyan-500" />
-              喂食
-              <span className="ml-auto text-slate-400">{selectedFood ? '✕' : '▶'}</span>
-            </Button>
-            {selectedFood && (
-              <div className="pl-6 space-y-2">
-                {foodTypes.map((food) => (
-                  <button
-                    key={food.name}
-                    onClick={() => handleAddFood(food.name)}
-                    className="w-full text-left px-4 py-3 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-3 transition-all duration-200 hover:scale-[1.02]"
-                  >
-                    <div
-                      className="w-8 h-8 rounded-full border-2 border-slate-300 dark:border-slate-600 shadow-sm"
-                      style={{ backgroundColor: food.color }}
-                    />
-                    <span className="text-sm font-medium">{food.name}</span>
-                  </button>
-                ))}
-                <p className="text-xs text-slate-500 dark:text-slate-400 pl-2">点击食料撒入3-5颗鱼食</p>
-              </div>
-            )}
-          </div>
-
-          {/* 暂存区 */}
-          <div className="space-y-2">
-            <Button
-              variant="outline"
-              className="w-full justify-start h-11"
-              onClick={() => setStagingExpanded(!stagingExpanded)}
-            >
-              <Archive className="mr-2 h-4 w-4 text-purple-500" />
-              暂存区
-              <span className="ml-auto text-xs bg-slate-200 dark:bg-slate-600 px-2 py-1 rounded-full">{stagingFishes.length}</span>
-            </Button>
-            {stagingExpanded && (
-              <div className="pl-6 space-y-2">
-                {stagingFishes.length === 0 ? (
-                  <p className="text-xs text-slate-500 dark:text-slate-400 pl-2">暂存区为空</p>
-                ) : (
-                  stagingFishes.map((fish) => (
-                    <div key={fish.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
-                      <img
-                        src={fish.image}
-                        alt={fish.name || '鱼'}
-                        className="w-12 h-12 object-contain"
-                      />
-                      <div className="flex-1">
-                        <button
-                          onClick={() => moveToTank(fish.id)}
-                          className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium"
-                        >
-                          {fish.name || '未命名鱼'}
-                        </button>
-                        <p className="text-xs text-slate-500">大小: {Math.round(fish.size)}px</p>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => deleteStagingFish(fish.id)}
-                      >
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* 添加鱼 */}
-          <div className="space-y-2">
-            <Dialog open={isDrawing} onOpenChange={setIsDrawing}>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="w-full justify-start h-11">
-                  <Palette className="mr-2 h-4 w-4 text-purple-500" />
-                  画一条鱼
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0" closeOnOutsideClick={false}>
-                <DialogHeader className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
-                  <DialogTitle>画一条鱼</DialogTitle>
-                </DialogHeader>
-                <div className="p-4">
-                  <DrawingBoard 
-                    onFishCreated={handleAddFish}
-                    onFishUpdated={redrawingFishId ? (image) => updateFishImage(redrawingFishId, image) : undefined}
-                    onClose={() => {
-                      setIsDrawing(false);
-                      setRedrawingFishId(null);
-                    }} 
-                    aiServiceEnabled={aiServiceEnabled}
-                    initialImage={redrawingFishId ? fishes.find(f => f.id === redrawingFishId)?.image : undefined}
-                  />
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            <Dialog open={isGenerating} onOpenChange={setIsGenerating}>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="w-full justify-start h-11">
-                  <Plus className="mr-2 h-4 w-4 text-green-500" />
-                  文生图生成鱼
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-0" closeOnOutsideClick={false}>
-                <DialogHeader className="px-6 py-4 border-b border-slate-200 dark:border-slate-700">
-                  <DialogTitle>文生图生成鱼</DialogTitle>
-                </DialogHeader>
-                <div className="p-4">
-                  <ImageGenerator onFishCreated={handleAddFish} onClose={() => setIsGenerating(false)} aiServiceEnabled={aiServiceEnabled} />
-                </div>
-              </DialogContent>
-            </Dialog>
-          </div>
-
-          {/* 导入导出 */}
-          <div className="space-y-2">
-            <input
-              type="file"
-              id="fish-import"
-              multiple
-              accept="image/*,.zip"
-              className="hidden"
-              onChange={handleImportFishes}
-            />
-            <Button
-              variant="outline"
-              className="w-full justify-start h-11"
-              onClick={() => document.getElementById('fish-import')?.click()}
-            >
-              <Download className="mr-2 h-4 w-4 text-blue-500" />
-              批量导入（支持ZIP）
-            </Button>
-            {fishes.length > 0 && (
-              <Button 
-                variant="outline" 
-                className="w-full justify-start h-11"
-                onClick={exportAllFishes}
-              >
-                <Download className="mr-2 h-4 w-4 text-green-500" />
-                导出所有鱼（ZIP）
-              </Button>
-            )}
-          </div>
-        </div>
-
-        <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-slate-600 dark:text-slate-400">当前鱼数量</span>
-            <span className="font-bold text-blue-600 dark:text-blue-400">{fishes.length}</span>
-          </div>
-          <div className="flex items-center justify-between text-sm mt-2">
-            <span className="text-slate-600 dark:text-slate-400">暂存区数量</span>
-            <span className="font-bold text-purple-600 dark:text-purple-400">{stagingFishes.length}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* 鱼缸区域 */}
-      <div className="flex-1 p-4 md:p-8 overflow-hidden">
+    <div className="relative h-screen w-full overflow-hidden">
+      {/* 全屏鱼缸 */}
+      <div className="absolute inset-0">
         <FishTank
           ref={fishTankRef}
           fishes={fishes}
@@ -860,175 +580,456 @@ export default function Home() {
           setFoods={setFoods}
           backgroundColor={backgroundColor}
           onFishClick={handleFishClick}
+          imageCache={imageCache}
+          getFishImage={getFishImage}
+          onRenderedFishCountChange={setRenderedFishCount}
+          feedingMode={feedingMode}
+          onTankClick={(x, y) => {
+            if (feedingMode) {
+              const newFood = {
+                id: `${Date.now()}-${Math.random()}`,
+                x,
+                y,
+                startY: y,
+                eaten: false,
+                foodType: selectedFoodType,
+                createdAt: Date.now()
+              };
+              setFoods(prev => [...prev, newFood]);
+            }
+          }}
         />
       </div>
 
-      {/* 鱼编辑对话框 */}
-      <Dialog open={fishEditDialogOpen} onOpenChange={(open) => {
-        setFishEditDialogOpen(open);
-        if (!open) {
-          setEditingFishName(false);
-        }
-      }}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>编辑鱼</DialogTitle>
-          </DialogHeader>
-          {selectedFish && (
-            <div className="space-y-6">
-              {/* 鱼的预览 */}
-              <div className="flex justify-center">
-                <img
-                  src={selectedFish.image}
-                  alt="fish"
-                  className="max-w-[150px] max-h-[150px] object-contain"
-                />
-              </div>
+      {/* 左上角标题 */}
+      <div className="absolute top-4 left-4 bg-white/10 dark:bg-black/20 backdrop-blur-md rounded-2xl px-4 py-3 shadow-[inset_2px_2px_4px_rgba(0,0,0,0.1),0_4px_4px_2px_rgba(0,0,0,0.1)]">
+        <div className="flex items-center gap-3">
+          <Fish className="w-8 h-8 text-blue-400" />
+          <h1 className="text-xl font-bold text-white tracking-wide" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.6), 0 0 20px rgba(0,0,0,0.3)' }}>我的鱼缸</h1>
+        </div>
+      </div>
+      <div className="absolute bottom-4 left-4 px-4 py-3">
+        <p className="text-sm text-white tracking-wide" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.6), 0 0 20px rgba(0,0,0,0.3)' }}>当前鱼数量：<span className="font-bold text-purple-400">{renderedFishCount}</span></p>
+      </div>
 
-              {/* 名称显示和编辑 */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium">名称</label>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setEditingFishName(!editingFishName)}
-                    className="h-7 px-2"
-                  >
-                    {editingFishName ? (
-                      <>
-                        <X className="h-3 w-3 mr-1" />
-                        取消
-                      </>
-                    ) : (
-                      <>
-                        <Type className="h-3 w-3 mr-1" />
-                        编辑
-                      </>
-                    )}
-                  </Button>
-                </div>
-                {editingFishName ? (
-                  <Input
-                    value={selectedFish.name}
-                    onChange={(e) => updateFishProperties(selectedFish.id, { name: e.target.value })}
-                    placeholder="输入鱼的名称"
-                    className="w-full"
-                    autoFocus
-                  />
-                ) : (
-                  <div className="px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-md border border-slate-200 dark:border-slate-700">
-                    <span className="text-sm">{selectedFish.name || '未命名'}</span>
+      {/* 右上角功能区域 */}
+      <div className="absolute top-4 right-4 flex flex-col items-end" ref={menuRef}>
+        {/* 遮罩层 - 仅覆盖四个图标区域 */}
+        <div className="absolute -top-4 -right-4 -bottom-4 w-[60px] bg-transparent z-10" />
+
+        {/* 菜单按钮和下拉列表容器 - 层级最高 */}
+        <div className="relative z-30">
+          {/* 功能菜单按钮 */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="w-12 h-12 bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 dark:border-slate-700/50 hover:bg-white dark:hover:bg-slate-800"
+            onClick={() => {
+              setBackgroundExpanded(false);
+              setFeedingMode(false);
+              setMenuOpen(!menuOpen);
+            }}
+          >
+            {menuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </Button>
+
+          {/* 功能菜单下拉列表 - 放在这里确保层级最高 */}
+          {menuOpen && (
+            <div className="absolute top-14 right-0 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 p-4 w-fit min-w-[180px] max-h-[80vh] overflow-y-auto">
+              <div className="space-y-3">
+                {/* AI 服务开关 */}
+                <div className="flex items-center justify-between gap-4 px-2 py-1">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-slate-400" />
+                    <span className="text-sm font-medium">AI 服务</span>
                   </div>
-                )}
-              </div>
+                  <div className="opacity-50" title="AI 服务已禁用">
+                    <Switch
+                      checked={false}
+                      disabled
+                      className="data-[state=checked]:bg-purple-600"
+                    />
+                  </div>
+                </div>
 
-              {/* 大小控制 */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium">大小</label>
-                  <span className="text-sm text-slate-500">{Math.round(selectedFish.size)}px</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => updateFishProperties(selectedFish.id, { size: Math.max(30, selectedFish.size - 10) })}
-                  >
-                    <ZoomOut className="h-4 w-4" />
-                  </Button>
-                  <Slider
-                    value={[selectedFish.size]}
-                    min={30}
-                    max={150}
-                    step={10}
-                    onValueChange={([value]) => updateFishProperties(selectedFish.id, { size: value })}
-                    className="flex-1"
-                  />
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => updateFishProperties(selectedFish.id, { size: Math.min(150, selectedFish.size + 10) })}
-                  >
-                    <ZoomIn className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
+                {/* 分隔线 - AI 服务下方 */}
+                <div className="border-t border-slate-200 dark:border-slate-700 my-2" />
 
-              {/* 速度倍率控制 */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium">速度倍率</label>
-                  <span className="text-sm text-slate-500">{selectedFish.speedMultiplier.toFixed(2)}x</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => updateFishProperties(selectedFish.id, { speedMultiplier: Math.max(0.5, selectedFish.speedMultiplier - 0.1) })}
+                {/* 添加鱼 */}
+                <div className="space-y-2">
+                  <button
+                    className="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                    onClick={() => {
+                      setBackgroundExpanded(false);
+                      setFeedingMode(false);
+                      setIsGenerating(true);
+                      setMenuOpen(false);
+                    }}
                   >
-                    <ZoomOut className="h-4 w-4" />
-                  </Button>
-                  <Slider
-                    value={[selectedFish.speedMultiplier]}
-                    min={0.5}
-                    max={2}
-                    step={0.1}
-                    onValueChange={([value]) => updateFishProperties(selectedFish.id, { speedMultiplier: value })}
-                    className="flex-1"
-                  />
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => updateFishProperties(selectedFish.id, { speedMultiplier: Math.min(2, selectedFish.speedMultiplier + 0.1) })}
-                  >
-                    <ZoomIn className="h-4 w-4" />
-                  </Button>
+                    <Plus className="w-5 h-5 text-green-500" />
+                    <span className="text-sm font-medium">AI 生成鱼</span>
+                  </button>
                 </div>
-                <p className="text-xs text-slate-500">调整鱼移动速度的倍率，范围：0.5x - 2x</p>
-              </div>
 
-              {/* 操作按钮 */}
-              <div className="flex flex-wrap gap-2 pt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => handleRedrawFish(selectedFish.id)}
-                  className="flex-1"
-                >
-                  <Palette className="mr-2 h-4 w-4" />
-                  重新绘制
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => exportSingleFish(selectedFish.id)}
-                  className="flex-1"
-                >
-                  <Download className="mr-2 h-4 w-4" />
-                  导出
-                </Button>
-                <Button
-                  variant="destructive"
-                  className="flex-1"
-                  onClick={() => moveToStaging(selectedFish.id)}
-                >
-                  <Archive className="mr-2 h-4 w-4" />
-                  移到暂存区
-                </Button>
-                <Button
-                  onClick={() => {
-                    setFishEditDialogOpen(false);
-                    setSelectedFishId(null);
-                    setEditingFishName(false);
-                  }}
-                  className="flex-1 bg-slate-900 text-white hover:bg-slate-800"
-                >
-                  确定
-                </Button>
+                {/* 导入导出 */}
+                <div className="space-y-2">
+                  <button
+                    className="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                    onClick={() => {
+                      // 先关闭菜单，再触发点击
+                      setMenuOpen(false);
+                      // 延迟一点时间确保菜单关闭后再触发
+                      setTimeout(() => {
+                        importInputRef.current?.click();
+                      }, 100);
+                    }}
+                  >
+                    <Upload className="w-5 h-5 text-blue-500" />
+                    <span className="text-sm font-medium">导入鱼鱼</span>
+                  </button>
+                  {fishes.length > 0 && (
+                    <button
+                      className="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                      onClick={() => {
+                        setExportDialogOpen(true);
+                        setMenuOpen(false);
+                      }}
+                    >
+                      <Download className="w-5 h-5 text-green-500" />
+                      <span className="text-sm font-medium">导出鱼鱼</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}
+        </div>
+
+        {/* 独立功能按钮 - 竖排 - 层级较低 */}
+        <div className="flex flex-col items-end gap-2 mt-2 relative z-20">
+          {/* 背景灯 - 向左展开 */}
+          <div className="relative">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="w-12 h-12 bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 dark:border-slate-700/50 hover:bg-white dark:hover:bg-slate-800"
+              onClick={() => {
+                setMenuOpen(false);
+                setFeedingMode(false);
+                setBackgroundExpanded(!backgroundExpanded);
+              }}
+            >
+              <Lightbulb className="w-6 h-6 text-amber-500" />
+            </Button>
+            {/* 背景灯展开面板 - 向左 */}
+            {backgroundExpanded && (
+              <div className="absolute right-14 top-0 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 p-2">
+                <div className="flex flex-wrap gap-2 w-fit">
+                  {backgroundColors.map((color) => (
+                    <button
+                      key={color.value}
+                      onClick={() => {
+                        handleBackgroundChange(color.value);
+                        setBackgroundExpanded(false);
+                      }}
+                      onMouseEnter={() => setHoveredColor(color.name)}
+                      onMouseLeave={() => setHoveredColor(null)}
+                      className="relative group"
+                    >
+                      <div
+                        className="w-8 h-8 rounded-2xl border-2 border-slate-300 dark:border-slate-600 shadow-sm hover:scale-110 transition-transform"
+                        style={{ background: color.value }}
+                      />
+                      {/* 颜色名称提示 */}
+                      {(hoveredColor === color.name) && (
+                        <div className="absolute top-1/2 -translate-y-1/2 -left-2 bg-slate-800 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10 -translate-x-full">
+                          {color.name}
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 喂食模式 - 切换喂食模式 */}
+          <div className="relative">
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`w-12 h-12 backdrop-blur-sm rounded-2xl shadow-lg border transition-all ${feedingMode
+                ? 'bg-cyan-100 dark:bg-cyan-900/50 border-cyan-400 dark:border-cyan-600'
+                : 'bg-white/90 dark:bg-slate-800/90 border-slate-200/50 dark:border-slate-700/50 hover:bg-white dark:hover:bg-slate-800'
+                }`}
+              onClick={() => {
+                setMenuOpen(false);
+                setBackgroundExpanded(false);
+                if (!feedingMode) {
+                  // 随机选择食料类型
+                  const randomFood = foodTypes[Math.floor(Math.random() * foodTypes.length)];
+                  setSelectedFoodType(randomFood.name);
+                  setFeedingMode(true);
+                } else {
+                  setFeedingMode(false);
+                }
+              }}
+            >
+              <Cookie className={`w-6 h-6 ${feedingMode ? 'text-cyan-600 dark:text-cyan-400' : 'text-green-500'}`} />
+            </Button>
+            {/* 喂食模式提示 */}
+            {feedingMode && (
+              <div className="absolute right-14 top-1/2 -translate-y-1/2 bg-white/80 dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 px-2 py-1 whitespace-nowrap">
+                <p className="text-sm font-medium text-slate-700 dark:text-slate-300">喂食模式，再次点击退出</p>
+              </div>
+            )}
+          </div>
+
+          {/* 画一条鱼 */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="w-12 h-12 bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 dark:border-slate-700/50 hover:bg-white dark:hover:bg-slate-800"
+            onClick={() => {
+              setMenuOpen(false);
+              setBackgroundExpanded(false);
+              setFeedingMode(false);
+              setIsDrawing(true);
+            }}
+          >
+            <Palette className="w-6 h-6 text-purple-500" />
+          </Button>
+        </div>
+      </div>
+
+      {/* 绘画板弹窗 */}
+      <Dialog open={isDrawing} onOpenChange={(open) => {
+        setIsDrawing(open);
+        if (!open) {
+          setRedrawingFishId(null);
+          setRedrawingImage(null);
+        }
+      }}>
+        <DialogContent className="w-[90vw] !max-w-[90vw] h-[85vh] max-h-[85vh] p-0 gap-0 flex flex-col overflow-hidden" showCloseButton={false}>
+          <DialogHeader className="flex-shrink-0 px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+            <DialogTitle className="text-xl">{redrawingFishId ? '重新绘制鱼' : '画一条鱼'}</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <DrawingBoard
+              onFishCreated={handleAddFish}
+              onFishUpdated={redrawingFishId ? (image) => updateFishImage(redrawingFishId, image) : undefined}
+              onClose={() => {
+                setIsDrawing(false);
+                setRedrawingFishId(null);
+                setRedrawingImage(null);
+              }}
+              aiServiceEnabled={aiServiceEnabled}
+              initialImage={redrawingImage || undefined}
+            />
+          </div>
         </DialogContent>
       </Dialog>
+
+      {/* 文生图弹窗 */}
+      <Dialog open={isGenerating} onOpenChange={setIsGenerating}>
+        <DialogContent className="w-[90vw] !max-w-[90vw] h-[85vh] max-h-[85vh] p-0 gap-0 flex flex-col overflow-hidden" showCloseButton={false}>
+          <DialogHeader className="flex-shrink-0 px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+            <DialogTitle className="text-xl">AI 生成鱼</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <ImageGenerator
+              onFishCreated={handleAddFish}
+              onClose={() => setIsGenerating(false)}
+              aiServiceEnabled={aiServiceEnabled}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 鱼编辑弹窗 */}
+      <Dialog open={fishEditDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setEditingFishData(null);
+          setIsEditingFishName(false);
+          setFishEditDialogOpen(false);
+        }
+      }}>
+        <DialogContent className="sm:max-w-md flex flex-col p-0 gap-0 overflow-hidden">
+          {/* 固定标题栏 */}
+          <DialogHeader className="flex-shrink-0 px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+            <DialogTitle>鱼的信息</DialogTitle>
+          </DialogHeader>
+
+          {/* 可滚动内容区域 */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {selectedFish && editingFishData && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-center">
+                  <FishImage
+                    imageId={selectedFish.imageId}
+                    alt={selectedFish.name || '鱼'}
+                    className="w-32 h-32 object-contain"
+                    imageCache={imageCache}
+                    getFishImage={getFishImage}
+                  />
+                </div>
+
+                {/* 名称编辑 - 名称前缀，笔图标上标 */}
+                <div className="flex flex-col gap-2">
+                  <span className="text-sm text-slate-500">名称</span>
+                  {isEditingFishName ? (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={editingFishData.name}
+                        onChange={(e) => {
+                          setEditingFishData(prev => prev ? { ...prev, name: e.target.value } : null);
+                        }}
+                        placeholder="未命名鱼"
+                        autoFocus
+                        className="flex-1"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setIsEditingFishName(false)}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-lg">{editingFishData.name || '未命名鱼'}</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-4 w-4 -mt-2"
+                        onClick={() => setIsEditingFishName(true)}
+                      >
+                        <LucideEdit className="w-3 h-3 text-slate-500" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-500">大小</span>
+                    <span className="text-sm">{Math.round(editingFishData.size)}px</span>
+                  </div>
+                  <Slider
+                    value={[editingFishData.size]}
+                    min={30}
+                    max={150}
+                    step={5}
+                    onValueChange={(value) => {
+                      setEditingFishData(prev => prev ? { ...prev, size: value[0] } : null);
+                    }}
+                  />
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-500">游动速度</span>
+                    <span className="text-sm">{editingFishData.speedMultiplier.toFixed(1)}x</span>
+                  </div>
+                  <Slider
+                    value={[editingFishData.speedMultiplier]}
+                    min={0.2}
+                    max={3}
+                    step={0.1}
+                    onValueChange={(value) => {
+                      setEditingFishData(prev => prev ? { ...prev, speedMultiplier: value[0] } : null);
+                    }}
+                  />
+                </div>
+
+                <div className="space-y-2 flex flex-row gap-4">
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="gap-2"
+                    onClick={async () => {
+                      await deleteImage(selectedFish.imageId);
+                      imageCache.delete(selectedFish.imageId);
+                      setFishes(prev => prev.filter(f => f.id !== selectedFish.id));
+                      setSelectedFishId(null);
+                      setEditingFishData(null);
+                      setFishEditDialogOpen(false);
+                    }}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    删除鱼
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => {
+                      const image = getFishImage(selectedFish.imageId);
+                      image.then(img => {
+                        if (img) {
+                          setRedrawingImage(img);
+                          setRedrawingFishId(selectedFish.id);
+                          setIsEditingFishName(false);
+                          setEditingFishData(null);
+                          setFishEditDialogOpen(false);
+                          setIsDrawing(true);
+                        }
+                      });
+                    }}
+                  >
+                    <Palette className="w-4 h-4" />
+                    重新绘制
+                  </Button>
+                  <Button
+                    className="flex-1 bg-black hover:bg-slate-800 text-white"
+                    onClick={() => {
+                      updateFish();
+                      setIsEditingFishName(false);
+                      setEditingFishData(null);
+                      setFishEditDialogOpen(false);
+                    }}
+                  >
+                    确定
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 导出确认弹窗 */}
+      <AlertDialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认导出</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要导出所有 {fishes.length} 条鱼吗？将生成一个包含所有鱼图片的 ZIP 文件。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              exportAllFishes();
+              setExportDialogOpen(false);
+            }}>
+              确认导出
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 隐藏的文件输入 - 放在这里避免层级问题 */}
+      <input
+        ref={importInputRef}
+        type="file"
+        id="fish-import-new"
+        multiple
+        accept="image/*,.zip"
+        className="hidden"
+        onChange={handleImportFishes}
+      />
     </div>
   );
 }

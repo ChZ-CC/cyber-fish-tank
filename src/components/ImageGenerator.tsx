@@ -18,6 +18,7 @@ export default function ImageGenerator({ onFishCreated, onClose, aiServiceEnable
   const [prompt, setPrompt] = useState('');
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const examplePrompts = [
     '一条橙色的小金鱼，圆滚滚的，游动',
@@ -28,9 +29,14 @@ export default function ImageGenerator({ onFishCreated, onClose, aiServiceEnable
 
   const generateImage = async () => {
     if (!prompt.trim()) return;
+    if (!aiServiceEnabled) {
+      setError('请先开启 AI 服务');
+      return;
+    }
 
     setIsGenerating(true);
     setGeneratedImage(null);
+    setError(null);
 
     try {
       const response = await fetch('/api/generate-fish', {
@@ -45,9 +51,12 @@ export default function ImageGenerator({ onFishCreated, onClose, aiServiceEnable
 
       if (result.imageUrls && result.imageUrls.length > 0) {
         setGeneratedImage(result.imageUrls[0]);
+      } else if (result.error) {
+        setError(result.error);
       }
-    } catch (error) {
-      console.error('生成失败:', error);
+    } catch (err) {
+      console.error('生成失败:', err);
+      setError('生成图片失败，请稍后重试');
     } finally {
       setIsGenerating(false);
     }
@@ -65,20 +74,31 @@ export default function ImageGenerator({ onFishCreated, onClose, aiServiceEnable
   };
 
   return (
-    <div className="flex flex-col h-full gap-6">
+    <div className="flex flex-col lg:flex-row h-full gap-6 p-6 overflow-y-auto min-h-0">
       {/* AI 服务禁用提示 */}
       {!aiServiceEnabled && (
-        <Alert className="bg-amber-50 border-amber-200 dark:bg-amber-950 dark:border-amber-800">
+        <Alert className="lg:hidden bg-amber-50 border-amber-200 dark:bg-amber-950 dark:border-amber-800 mb-4">
           <Lock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
           <AlertDescription className="text-amber-800 dark:text-amber-200">
-            AI 服务未开启。请在右上角开启"AI 服务"开关以使用文生图功能。
+            AI 服务未开启。请在侧边栏开启"AI 服务"开关以使用文生图功能。
           </AlertDescription>
         </Alert>
       )}
-      {/* 输入区域 */}
-      <div className={`space-y-4 ${!aiServiceEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
+      
+      {/* 左侧：输入区域 */}
+      <div className={`lg:w-[320px] lg:min-w-[320px] lg:flex-shrink-0 flex flex-col gap-5 ${!aiServiceEnabled ? 'opacity-50 pointer-events-none lg:opacity-100 lg:pointer-events-auto' : ''}`}>
+        {/* 宽屏下的AI服务禁用提示 */}
+        {!aiServiceEnabled && (
+          <Alert className="hidden lg:flex bg-amber-50 border-amber-200 dark:bg-amber-950 dark:border-amber-800">
+            <Lock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            <AlertDescription className="text-amber-800 dark:text-amber-200 text-sm">
+              AI 服务未开启。请在侧边栏开启开关。
+            </AlertDescription>
+          </Alert>
+        )}
+        
         <div>
-          <Label htmlFor="prompt" className="text-base font-medium mb-2 block">
+          <Label htmlFor="prompt" className="text-base font-semibold mb-3 block text-slate-700 dark:text-slate-300">
             描述你想要的鱼
           </Label>
           <Textarea
@@ -86,16 +106,16 @@ export default function ImageGenerator({ onFishCreated, onClose, aiServiceEnable
             placeholder="例如：一条橙色的小金鱼，圆滚滚的，游动..."
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            className="min-h-[120px] text-base resize-none focus:ring-2 focus:ring-blue-500"
+            className="min-h-[120px] text-base resize-none focus:ring-2 focus:ring-blue-500 border-slate-300 dark:border-slate-600"
           />
         </div>
 
         {/* 示例提示 */}
-        <div>
+        <div className="flex flex-col flex-1">
           <Label className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-2 block">
             示例提示（点击快速填入）：
           </Label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="flex flex-col gap-2">
             {examplePrompts.map((example) => (
               <button
                 key={example}
@@ -108,13 +128,22 @@ export default function ImageGenerator({ onFishCreated, onClose, aiServiceEnable
           </div>
         </div>
 
-        {/* 生成按钮 */}
-        <Button
-          onClick={generateImage}
-          disabled={isGenerating || !prompt.trim()}
-          className="w-full h-12 text-base gap-2"
-          size="lg"
-        >
+        {/* 按钮区域 */}
+        <div className="flex gap-3">
+          <Button
+            variant="outline"
+            onClick={onClose}
+            className="flex-1 h-12"
+            size="lg"
+          >
+            取消
+          </Button>
+          <Button
+            onClick={generateImage}
+            disabled={isGenerating || !prompt.trim() || !aiServiceEnabled}
+            className="flex-1 h-12 text-base gap-2"
+            size="lg"
+          >
           {isGenerating ? (
             <>
               <Loader2 className="w-5 h-5 animate-spin" />
@@ -123,68 +152,86 @@ export default function ImageGenerator({ onFishCreated, onClose, aiServiceEnable
           ) : (
             <>
               <Wand2 className="w-5 h-5" />
-              生成鱼的图像
+              生成一条鱼
             </>
           )}
         </Button>
-      </div>
+        </div>
 
-      {/* 生成结果 */}
-      {generatedImage && (
-        <div className="flex-1 flex flex-col gap-4 min-h-0">
-          <Label className="text-base font-medium">生成结果</Label>
-          <div className="flex-1 bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900 rounded-xl overflow-hidden border-2 border-slate-200 dark:border-slate-700 flex items-center justify-center p-4 min-h-[300px]">
-            <img
-              src={generatedImage}
-              alt="生成的鱼"
-              className="max-w-full max-h-full object-contain rounded-lg shadow-xl"
-            />
-          </div>
-          <div className="flex justify-end gap-3 pt-2">
-            <Button variant="outline" onClick={onClose} className="min-w-[100px]">
-              取消
-            </Button>
-            <Button onClick={handleConfirm} className="min-w-[120px] gap-2">
+        {/* 宽屏下的确认按钮 */}
+        <div className="hidden lg:flex gap-3">
+          {generatedImage && (
+            <Button onClick={handleConfirm} className="flex-1 gap-2 h-10">
               <Sparkles className="w-4 h-4" />
               确认添加
             </Button>
-          </div>
+          )}
         </div>
-      )}
+      </div>
 
-      {!generatedImage && !isGenerating && (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center space-y-4 p-8">
-            <div className="w-20 h-20 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full mx-auto flex items-center justify-center shadow-lg">
-              <Sparkles className="w-10 h-10 text-white" />
+      {/* 右侧：生成结果展示区域 */}
+      <div className="flex-1 flex flex-col min-h-[300px] lg:min-h-0">
+        {error && (
+          <Alert className="mb-4 bg-red-50 border-red-200 dark:bg-red-950 dark:border-red-800">
+            <AlertDescription className="text-red-800 dark:text-red-200">
+              {error}
+            </AlertDescription>
+          </Alert>
+        )}
+        
+        {generatedImage ? (
+          <div className="flex-1 flex flex-col gap-4 min-h-0">
+            <Label className="text-base font-semibold hidden lg:block text-slate-700 dark:text-slate-300">生成结果</Label>
+            <div className="flex-1 bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900 rounded-xl overflow-hidden border-2 border-slate-200 dark:border-slate-700 flex items-center justify-center p-4">
+              <img
+                src={generatedImage}
+                alt="生成的鱼"
+                className="max-w-full max-h-full object-contain rounded-lg shadow-xl"
+              />
             </div>
-            <div>
-              <p className="text-lg font-medium text-slate-700 dark:text-slate-300">
-                准备生成一条鱼
-              </p>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
-                输入描述并点击生成按钮
-              </p>
+            {/* 移动端确认按钮 */}
+            <div className="flex lg:hidden justify-end gap-3 pt-2">
+              <Button variant="outline" onClick={onClose} className="min-w-[100px]">
+                取消
+              </Button>
+              <Button onClick={handleConfirm} className="min-w-[120px] gap-2">
+                <Sparkles className="w-4 h-4" />
+                确认添加
+              </Button>
             </div>
           </div>
-        </div>
-      )}
-
-      {isGenerating && (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center space-y-4">
-            <Loader2 className="w-16 h-16 text-blue-500 animate-spin mx-auto" />
-            <div>
-              <p className="text-lg font-medium text-slate-700 dark:text-slate-300">
-                正在生成...
-              </p>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
-                请稍候，这可能需要几秒钟
-              </p>
+        ) : isGenerating ? (
+          <div className="flex-1 flex items-center justify-center bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
+            <div className="text-center space-y-4">
+              <Loader2 className="w-16 h-16 text-blue-500 animate-spin mx-auto" />
+              <div>
+                <p className="text-lg font-medium text-slate-700 dark:text-slate-300">
+                  正在生成...
+                </p>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
+                  请稍候，这可能需要几秒钟
+                </p>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="flex-1 flex items-center justify-center bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
+            <div className="text-center space-y-4 p-8">
+              <div className="w-20 h-20 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full mx-auto flex items-center justify-center shadow-lg">
+                <Sparkles className="w-10 h-10 text-white" />
+              </div>
+              <div>
+                <p className="text-lg font-medium text-slate-700 dark:text-slate-300">
+                  准备生成一条鱼
+                </p>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
+                  {aiServiceEnabled ? '输入描述并点击生成按钮' : '请先开启 AI 服务'}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
