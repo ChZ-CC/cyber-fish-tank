@@ -75,28 +75,18 @@ export default function ImageGenerator({ onFishCreated, onClose, aiServiceEnable
 
   return (
     <div className="flex flex-col lg:flex-row h-full gap-6 p-6 overflow-y-auto min-h-0">
-      {/* AI 服务禁用提示 */}
-      {!aiServiceEnabled && (
-        <Alert className="lg:hidden bg-amber-50 border-amber-200 dark:bg-amber-950 dark:border-amber-800 mb-4">
-          <Lock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-          <AlertDescription className="text-amber-800 dark:text-amber-200">
-            AI 服务未开启。请在侧边栏开启"AI 服务"开关以使用文生图功能。
-          </AlertDescription>
-        </Alert>
-      )}
-      
       {/* 左侧：输入区域 */}
-      <div className={`lg:w-[320px] lg:min-w-[320px] lg:flex-shrink-0 flex flex-col gap-5 ${!aiServiceEnabled ? 'opacity-50 pointer-events-none lg:opacity-100 lg:pointer-events-auto' : ''}`}>
-        {/* 宽屏下的AI服务禁用提示 */}
+      <div className="lg:w-[320px] lg:min-w-[320px] lg:flex-shrink-0 flex flex-col gap-5">
+        {/* AI 服务禁用提示 */}
         {!aiServiceEnabled && (
-          <Alert className="hidden lg:flex bg-amber-50 border-amber-200 dark:bg-amber-950 dark:border-amber-800">
+          <Alert className="bg-amber-50 border-amber-200 dark:bg-amber-950 dark:border-amber-800 mb-4 lg:mb-0">
             <Lock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
             <AlertDescription className="text-amber-800 dark:text-amber-200 text-sm">
-              AI 服务未开启。请在侧边栏开启开关。
+              AI 服务未开启。
             </AlertDescription>
           </Alert>
         )}
-        
+
         <div>
           <Label htmlFor="prompt" className="text-base font-semibold mb-3 block text-slate-700 dark:text-slate-300">
             描述你想要的鱼
@@ -105,8 +95,9 @@ export default function ImageGenerator({ onFishCreated, onClose, aiServiceEnable
             id="prompt"
             placeholder="例如：一条橙色的小金鱼，圆滚滚的，游动..."
             value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            className="min-h-[120px] text-base resize-none focus:ring-2 focus:ring-blue-500 border-slate-300 dark:border-slate-600"
+            onChange={(e) => aiServiceEnabled && setPrompt(e.target.value)}
+            disabled={!aiServiceEnabled}
+            className={`min-h-[120px] text-base resize-none focus:ring-2 focus:ring-blue-400 border-slate-300 dark:border-slate-600 ${!aiServiceEnabled ? 'opacity-50' : ''}`}
           />
         </div>
 
@@ -119,8 +110,8 @@ export default function ImageGenerator({ onFishCreated, onClose, aiServiceEnable
             {examplePrompts.map((example) => (
               <button
                 key={example}
-                onClick={() => selectExample(example)}
-                className="text-left px-4 py-3 bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-sm border border-slate-200 dark:border-slate-700"
+                onClick={() => aiServiceEnabled && selectExample(example)}
+                className={`text-left px-4 py-3 bg-slate-100 dark:bg-slate-800 rounded-lg transition-colors text-sm border border-slate-200 dark:border-slate-700 ${aiServiceEnabled ? 'hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}
               >
                 {example}
               </button>
@@ -129,39 +120,42 @@ export default function ImageGenerator({ onFishCreated, onClose, aiServiceEnable
         </div>
 
         {/* 按钮区域 */}
-        <div className="flex gap-3">
-          <Button
-            variant="outline"
-            onClick={onClose}
-            className="flex-1 h-12"
-            size="lg"
-          >
-            取消
-          </Button>
-          <Button
-            onClick={generateImage}
-            disabled={isGenerating || !prompt.trim() || !aiServiceEnabled}
-            className="flex-1 h-12 text-base gap-2"
-            size="lg"
-          >
-          {isGenerating ? (
-            <>
-              <Loader2 className="w-5 h-5 animate-spin" />
-              生成中...
-            </>
-          ) : (
-            <>
-              <Wand2 className="w-5 h-5" />
-              生成一条鱼
-            </>
-          )}
-        </Button>
-        </div>
+        <div className="flex flex-col gap-3">
+          {/* 取消和生成按钮 */}
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={onClose}
+              className="flex-1 h-10"
+            >
+              取消
+            </Button>
+            <Button
+              onClick={generateImage}
+              disabled={isGenerating || !prompt.trim() || !aiServiceEnabled}
+              className="flex-1 gap-2 h-10"
+            >
+              {isGenerating ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  生成中...
+                </>
+              ) : (
+                <>
+                  <Wand2 className="w-4 h-4" />
+                  生成一条鱼
+                </>
+              )}
+            </Button>
+          </div>
 
-        {/* 宽屏下的确认按钮 */}
-        <div className="hidden lg:flex gap-3">
+          {/* 确认按钮 */}
           {generatedImage && (
-            <Button onClick={handleConfirm} className="flex-1 gap-2 h-10">
+            <Button
+              onClick={handleConfirm}
+              disabled={!aiServiceEnabled}
+              className={`flex-1 gap-2 h-10 ${!aiServiceEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
               <Sparkles className="w-4 h-4" />
               确认添加
             </Button>
@@ -178,7 +172,7 @@ export default function ImageGenerator({ onFishCreated, onClose, aiServiceEnable
             </AlertDescription>
           </Alert>
         )}
-        
+
         {generatedImage ? (
           <div className="flex-1 flex flex-col gap-4 min-h-0">
             <Label className="text-base font-semibold hidden lg:block text-slate-700 dark:text-slate-300">生成结果</Label>
@@ -189,16 +183,7 @@ export default function ImageGenerator({ onFishCreated, onClose, aiServiceEnable
                 className="max-w-full max-h-full object-contain rounded-lg shadow-xl"
               />
             </div>
-            {/* 移动端确认按钮 */}
-            <div className="flex lg:hidden justify-end gap-3 pt-2">
-              <Button variant="outline" onClick={onClose} className="min-w-[100px]">
-                取消
-              </Button>
-              <Button onClick={handleConfirm} className="min-w-[120px] gap-2">
-                <Sparkles className="w-4 h-4" />
-                确认添加
-              </Button>
-            </div>
+
           </div>
         ) : isGenerating ? (
           <div className="flex-1 flex items-center justify-center bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">

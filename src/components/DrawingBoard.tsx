@@ -227,13 +227,13 @@ export default function DrawingBoard({ onFishCreated, onFishUpdated, onClose, ai
       {/* 左侧工具栏（宽屏）或顶部工具栏（移动端） */}
       <div className="lg:w-[240px] lg:min-w-[240px] flex-shrink-0 flex flex-col border-r border-slate-100 dark:border-slate-700 bg-gradient-to-r from-slate-50 to-slate dark:from-slate-800 dark:to-slate-800/50">
         {/* 工具面板 - 可滚动区域 */}
-        <div className="flex-1 overflow-auto flex flex-wrap lg:flex-col gap-4 p-5 flex-shrink-0">
+        <div className="flex-1 overflow-auto flex flex-wrap lg:flex-col gap-5 p-5 flex-shrink-0">
           {/* 颜色选择 */}
           <div className="flex flex-col items-start gap-3 w-full">
             <Label className="text-sm font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">颜色</Label>
             <div className="flex lg:flex-col flex-row gap-3 w-full">
               {/* 色块和颜色代码输入框 */}
-              <div className="flex flex-col lg:flex-row items-center gap-3 flex-1">
+              <div className="flex flex-col lg:flex-row items-center gap-3 flex-1 pb-3">
                 <div className="relative group">
                   {/* 系统颜色选择器 */}
                   <input
@@ -248,7 +248,7 @@ export default function DrawingBoard({ onFishCreated, onFishUpdated, onClose, ai
                   />
                   {/* 颜色色块 */}
                   <div
-                    className={`w-16 h-16 rounded-lg border-2 border-slate-300 dark:border-slate-600 shadow-sm transition-all group-hover:scale-105 ${!commonColors.includes(brushColor) && !isEraser ? 'ring-2 ring-blue-500 ring-offset-2' : ''
+                    className={`w-16 h-16 rounded-lg border-2 border-slate-300 dark:border-slate-600 shadow-sm transition-all group-hover:scale-105 ${!commonColors.includes(brushColor) && !isEraser ? 'ring-2 ring-blue-400 ring-offset-2' : ''
                       }`}
                     style={{ backgroundColor: !isEraser ? brushColor : '#FFFFFF' }}
                   />
@@ -276,7 +276,7 @@ export default function DrawingBoard({ onFishCreated, onFishUpdated, onClose, ai
                     }}
                     
                     className={`w-8 h-8 rounded-full border-2 transition-all hover:scale-110 shadow-sm ${brushColor === color && !isEraser
-                        ? 'border-blue-500 scale-110 ring-2 ring-blue-500 ring-offset-2'
+                        ? 'border-blue-400 scale-110 ring-2 ring-blue-400 ring-offset-2'
                         : color === '#FFFFFF'
                           ? 'border-slate-400 dark:border-slate-500 hover:border-slate-500'
                           : 'border-slate-300 dark:border-slate-600 hover:border-slate-400'

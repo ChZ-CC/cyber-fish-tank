@@ -8,6 +8,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
+
 import {
   Lightbulb,
   Fish,
@@ -549,10 +550,10 @@ export default function Home() {
   const deleteFish = useCallback(async (fishId: string) => {
     const fish = fishes.find(f => f.id === fishId);
     if (!fish) return;
-    
+
     await deleteImage(fish.imageId);
     imageCache.delete(fish.imageId);
-    
+
     const updatedFishes = fishes.filter(f => f.id !== fishId);
     setFishes(updatedFishes);
     saveFishesImmediately(updatedFishes);
@@ -727,18 +728,16 @@ export default function Home() {
                     <Upload className="w-5 h-5 text-blue-500" />
                     <span className="text-sm font-medium">导入鱼鱼</span>
                   </button>
-                  {fishes.length > 0 && (
-                    <button
-                      className="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-                      onClick={() => {
-                        setExportDialogOpen(true);
-                        setMenuOpen(false);
-                      }}
-                    >
-                      <Download className="w-5 h-5 text-green-500" />
-                      <span className="text-sm font-medium">导出鱼鱼</span>
-                    </button>
-                  )}
+                  <button
+                    className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg transition-colors hover:bg-slate-100 dark:hover:bg-slate-700 ${fishes.length > 0 ? '' : 'opacity-50'}`}
+                    onClick={() => {
+                      setExportDialogOpen(true);
+                      setMenuOpen(false);
+                    }}
+                  >
+                    <Download className={`w-5 h-5 ${fishes.length > 0 ? 'text-green-500' : 'text-slate-400'}`} />
+                    <span className="text-sm font-medium">导出鱼鱼</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -819,7 +818,7 @@ export default function Home() {
             </Button>
             {/* 喂食模式提示 */}
             {feedingMode && (
-              <div className="absolute right-14 top-1/2 -translate-y-1/2 bg-white/80 dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 px-2 py-1 whitespace-nowrap">
+              <div className="absolute right-14 top-1/2 -translate-y-1/2 bg-white/80 dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 px-3 py-2 whitespace-nowrap">
                 <p className="text-sm font-medium text-slate-700 dark:text-slate-300">喂食模式，再次点击退出</p>
               </div>
             )}
@@ -1019,14 +1018,14 @@ export default function Home() {
       <AlertDialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>确认导出</AlertDialogTitle>
+            <AlertDialogTitle>{fishes.length > 0 ? '确认导出' : '没有鱼可以导出'}</AlertDialogTitle>
             <AlertDialogDescription>
-              确定要导出所有 {fishes.length} 条鱼吗？将生成一个包含所有鱼图片的 ZIP 文件。
+              {fishes.length > 0 ? `确定要导出所有 ${fishes.length} 条鱼吗？将生成一个包含所有鱼图片的 ZIP 文件。` : ''}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={() => {
+            <AlertDialogCancel>{fishes.length > 0 ? '取消' : '关闭'}</AlertDialogCancel>
+            <AlertDialogAction hidden={!fishes.length} onClick={() => {
               exportAllFishes();
               setExportDialogOpen(false);
             }}>

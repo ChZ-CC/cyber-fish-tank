@@ -136,6 +136,7 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
         const attractionThreshold = diagonalLength / 2;
 
         foodEaterMapRef.current.clear();
+        const foodsToUpdate = [...foodsRef.current];
 
         setFishes(prevFishes => {
           return prevFishes.map(fish => {
@@ -146,7 +147,7 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
             let newSize = fish.size;
 
             // 每次循环都重新获取最新的未吃食物列表
-            const activeFoods = foodsRef.current.filter(food => !food.eaten && !foodEaterMapRef.current.has(food.id));
+            const activeFoods = foodsToUpdate.filter(food => !food.eaten && !foodEaterMapRef.current.has(food.id));
             if (activeFoods.length > 0) {
               // 计算鱼中心位置
               const fishCenterX = fish.x + fish.size / 2;
@@ -175,9 +176,10 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
                   foodEaterMapRef.current.set(nearestFood.id, fish.id);
                   newSize = Math.min(fish.size + 5, 150);
                   // 标记食物为已吃
-                  foodsRef.current = foodsRef.current.map(food =>
-                    food.id === nearestFood.id ? { ...food, eaten: true } : food
-                  );
+                  const foodIndex = foodsToUpdate.findIndex(food => food.id === nearestFood.id);
+                  if (foodIndex !== -1) {
+                    foodsToUpdate[foodIndex] = { ...foodsToUpdate[foodIndex], eaten: true };
+                  }
                   console.info('鱼吃了食物, 鱼=', fish.name, '旧尺寸=', fish.size, '新尺寸=', newSize);
                 }
               } else if (dist <= attractionThreshold) {
@@ -219,9 +221,16 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
           });
         });
         // 一次性更新食物状态，过滤掉已吃的和过期的
-        setFoods(prevFoods =>
-          foodsRef.current.filter(food => now - food.createdAt < 5000 && !food.eaten)
-        );
+        setFoods(prevFoods => {
+          // 使用函数式更新确保基于最新的食物状态
+          return prevFoods.filter(food => {
+            // 检查食物是否被标记为已吃
+            const isEaten = foodEaterMapRef.current.has(food.id);
+            // 检查食物是否过期
+            const isExpired = now - food.createdAt >= 5000;
+            return !isEaten && !isExpired;
+          });
+        });
       };
 
       animationFrameId = requestAnimationFrame(animate);
