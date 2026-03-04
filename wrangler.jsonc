@@ -1,0 +1,7 @@
+{
+  "name": "cyber-fish-tank",
+  "compatibility_date": "2026-03-04",
+  "assets": {
+    "directory": "./out"
+  }
+}
