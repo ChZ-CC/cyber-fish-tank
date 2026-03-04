@@ -14,6 +14,8 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // Cloudflare Pages 配置
+  distDir: 'out', // 构建输出目录
 };
 
 export default nextConfig;

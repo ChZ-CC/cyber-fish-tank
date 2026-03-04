@@ -12,3 +12,4 @@ echo "Building the project..."
 npx next build
 
 echo "Build completed successfully!"
+echo "Build output directory: out/"
