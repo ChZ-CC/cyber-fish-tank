@@ -16,6 +16,7 @@ const nextConfig: NextConfig = {
   },
   // Cloudflare Pages 配置
   distDir: 'out', // 构建输出目录
+  output: 'export', // 静态导出模式
 };
 
 export default nextConfig;
