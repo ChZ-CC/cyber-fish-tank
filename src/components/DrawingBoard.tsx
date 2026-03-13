@@ -227,7 +227,7 @@ export default function DrawingBoard({ onFishCreated, onFishUpdated, onClose, ai
       {/* 左侧工具栏（宽屏）或顶部工具栏（移动端） */}
       <div className="lg:w-[240px] lg:min-w-[240px] flex-shrink-0 flex flex-col border-r border-slate-100 dark:border-slate-700 bg-gradient-to-r from-slate-50 to-slate dark:from-slate-800 dark:to-slate-800/50">
         {/* 工具面板 - 可滚动区域 */}
-        <div className="flex-1 overflow-auto flex flex-wrap lg:flex-col gap-5 p-5 flex-shrink-0">
+        <div className="flex-1 overflow-auto flex flex-col gap-5 p-5 flex-shrink-0">
           {/* 颜色选择 */}
           <div className="flex flex-col items-start gap-3 w-full">
             <Label className="text-sm font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">颜色</Label>
@@ -274,12 +274,12 @@ export default function DrawingBoard({ onFishCreated, onFishUpdated, onClose, ai
                       setBrushColor(color);
                       setIsEraser(false);
                     }}
-                    
+
                     className={`w-8 h-8 rounded-full border-2 transition-all hover:scale-110 shadow-sm ${brushColor === color && !isEraser
-                        ? 'border-blue-400 scale-110 ring-2 ring-blue-400 ring-offset-2'
-                        : color === '#FFFFFF'
-                          ? 'border-slate-400 dark:border-slate-500 hover:border-slate-500'
-                          : 'border-slate-300 dark:border-slate-600 hover:border-slate-400'
+                      ? 'border-blue-400 scale-110 ring-2 ring-blue-400 ring-offset-2'
+                      : color === '#FFFFFF'
+                        ? 'border-slate-400 dark:border-slate-500 hover:border-slate-500'
+                        : 'border-slate-300 dark:border-slate-600 hover:border-slate-400'
                       }`}
                     style={{ backgroundColor: color }}
                   />
@@ -298,13 +298,13 @@ export default function DrawingBoard({ onFishCreated, onFishUpdated, onClose, ai
                 min={1}
                 max={100}
                 step={1}
-                
+
               />
               <span className="text-sm font-mono bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded w-10 text-center">{brushSize[0]}</span>
             </div>
           </div>
 
-          <div className="block h-px w-full bg-slate-100 dark:bg-slate-600 my-1" />
+          {/* <div className="block h-px w-full bg-slate-100 dark:bg-slate-600 my-1" /> */}
 
           {/* 工具按钮 */}
           <div className="flex gap-2 flex-wrap">
@@ -313,25 +313,24 @@ export default function DrawingBoard({ onFishCreated, onFishUpdated, onClose, ai
               size="sm"
               onClick={() => setIsEraser(!isEraser)}
               className="gap-2 h-9 px-3"
-              
+              title="切换到橡皮擦工具"
             >
               <Eraser className="w-4 h-4" />
-              <span className="inline lg:hidden xl:inline text-sm">橡皮擦</span>
+              <span className="inline text-sm">橡皮擦</span>
             </Button>
             <Button variant="outline" size="sm" onClick={clearCanvas} className="gap-2 h-9 px-3" >
               <RefreshCw className="w-4 h-4" />
-              <span className="inline lg:hidden xl:inline text-sm">清空</span>
+              <span className="inline text-sm">清空</span>
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={fillBackground}
               className="gap-2 h-9 px-3"
-              
               title="用当前颜色填充整个画布"
             >
               <Paintbrush className="w-4 h-4" />
-              <span className="inline lg:hidden xl:inline text-sm">填充</span>
+              <span className="inline text-sm">填充</span>
             </Button>
           </div>
         </div>
@@ -362,40 +361,42 @@ export default function DrawingBoard({ onFishCreated, onFishUpdated, onClose, ai
       </div>
 
       {/* 右侧画布区域 */}
-      <div className="lg:flex-1 flex flex-col min-h-0 min-w-0 gap-4 items-center justify-center p-5 bg-slate dark:bg-slate-800/30 flex-shrink-0 mb-5">
-        <div
-          ref={canvasContainerRef}
-          className="rounded-xl overflow-hidden relative shadow-inner flex items-center justify-center w-full max-w-full flex-shrink-0"
-          style={{
-            // 始终以 8:5 宽高比呈现，宽度不超出，高度可超出
-            aspectRatio: '8 / 5',
-            // 棋盘格背景表示透明区域
-            backgroundImage: `
-              linear-gradient(45deg, #e0e0e0 25%, transparent 25%),
-              linear-gradient(-45deg, #e0e0e0 25%, transparent 25%),
-              linear-gradient(45deg, transparent 75%, #e0e0e0 75%),
-              linear-gradient(-45deg, transparent 75%, #e0e0e0 75%)
-            `,
-            backgroundSize: '20px 20px',
-            backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
-            backgroundColor: '#f5f5f5'
-          }}
-        >
-          <canvas
-            ref={canvasRef}
-            width={CANVAS_WIDTH}
-            height={CANVAS_HEIGHT}
-            className="w-full h-full touch-none cursor-crosshair"
-            onMouseDown={startDrawing}
-            onMouseMove={draw}
-            onMouseUp={stopDrawing}
-            onMouseLeave={stopDrawing}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
-            onTouchCancel={handleTouchCancel}
-          />
+      <div className="lg:flex-1 flex flex-col min-h-0 min-w-0 gap-4 items-center justify-start p-5 bg-slate dark:bg-slate-800/30 flex-shrink-0 mb-5 overflow-y-auto">
+        <div className="w-full max-w-full">
+          <div
+            ref={canvasContainerRef}
+            className="rounded-xl overflow-hidden relative shadow-inner flex items-center justify-center w-full max-w-full flex-shrink-0"
+            style={{
+              // 始终以 8:5 宽高比呈现，宽度不超出，高度可超出
+              aspectRatio: '8 / 5',
+              // 棋盘格背景表示透明区域
+              backgroundImage: `
+                linear-gradient(45deg, #e0e0e0 25%, transparent 25%),
+                linear-gradient(-45deg, #e0e0e0 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #e0e0e0 75%),
+                linear-gradient(-45deg, transparent 75%, #e0e0e0 75%)
+              `,
+              backgroundSize: '20px 20px',
+              backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
+              backgroundColor: '#f5f5f5'
+            }}
+          >
+            <canvas
+              ref={canvasRef}
+              width={CANVAS_WIDTH}
+              height={CANVAS_HEIGHT}
+              className="w-full h-full touch-none cursor-crosshair"
+              onMouseDown={startDrawing}
+              onMouseMove={draw}
+              onMouseUp={stopDrawing}
+              onMouseLeave={stopDrawing}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+              onTouchCancel={handleTouchCancel}
+            />
 
+          </div>
         </div>
       </div>
 
