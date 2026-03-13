@@ -22,9 +22,9 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
     fishes, setFishes,
     foods, setFoods,
     backgroundColor,
-    onFishClick, 
+    onFishClick,
     imageCache,
-    getFishImage, 
+    getFishImage,
     onRenderedFishCountChange,
     feedingMode,
     onTankClick,
@@ -118,7 +118,7 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
       if (containerSize.width <= 0 || containerSize.height <= 0) return;
 
       let lastTime = 0;
-      const targetFPS = 60;
+      const targetFPS = 30;
       const frameInterval = 1000 / targetFPS;
       let animationFrameId: number;
 
@@ -133,7 +133,7 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
         const diagonalLength = Math.sqrt(
           Math.pow(containerSize.width, 2) + Math.pow(containerSize.height, 2)
         );
-        const attractionThreshold = diagonalLength / 2;
+        const attractionThreshold = diagonalLength / 4;
 
         foodEaterMapRef.current.clear();
         const foodsToUpdate = [...foodsRef.current];
@@ -324,7 +324,7 @@ const FishTank = forwardRef<HTMLDivElement, FishTankProps>(
           return (
             <div
               key={fish.id}
-              className={`absolute transition-transform duration-100 ${feedingMode ? '' : 'cursor-pointer hover:scale-110'}`}
+              className={`absolute ${feedingMode ? '' : 'cursor-pointer hover:scale-110'}`}
               onClick={(e) => {
                 if (!feedingMode) {
                   e.stopPropagation();
